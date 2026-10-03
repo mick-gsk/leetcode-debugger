@@ -639,7 +639,7 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     const p = await popup();
     await p.locator('#check').click();
     await p.waitForFunction(() => /Update auf v9\.0\.0 geladen/.test(document.querySelector('#upd').innerText), null, { timeout: 8000 });
-    assert.match(await p.locator('#checks').innerText(), /Debugger 2\.3\.0 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
+    assert.match(await p.locator('#checks').innerText(), /Debugger 2.3.1 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
     if (SHOT) { await p.setViewportSize({ width: 340, height: 420 }); await p.screenshot({ path: SHOT.replace(/\.png$/, '-update.png') }); }
     assert.match(await p.locator('#v').innerText(), /v9\.0\.0/);
     assert.ok(gh.auth.includes('Bearer geheim'), 'Token geht als Authorization mit');
