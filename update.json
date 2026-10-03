@@ -1,0 +1,6 @@
+{
+  "shell": 2,
+  "early": ["net.js"],
+  "main": ["ui.js", "page.js", "host.js"],
+  "engine": ["vendor/acorn.js", "tracer.js", "engine.js"]
+}

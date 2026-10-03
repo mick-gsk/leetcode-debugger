@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>LeetCode-Debugger</title>
+  <style>
+    body { margin: 0; width: 340px; font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; background: #1e1e1e; color: #eff1f6; }
+    header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #3d3d3d; font-weight: 600; }
+    header img { width: 20px; height: 20px; }
+    header .v { margin-left: auto; color: #a6a6a6; font-weight: 400; font-size: 12px; }
+    main { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    section { border-top: 1px solid #3d3d3d; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+    h2 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #a6a6a6; }
+    button { font: inherit; font-weight: 600; background: #ffa116; color: #1a1a1a; border: 0; border-radius: 7px; padding: 8px 12px; cursor: pointer; }
+    button.sec { background: #3a3a3a; color: #eff1f6; font-weight: 500; padding: 6px 10px; }
+    button:disabled { opacity: .45; cursor: default; }
+    ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+    li::before { content: attr(data-i) '  '; }
+    .msg { border-radius: 7px; padding: 8px 10px; background: #2a2a2a; }
+    .msg.bad { border-left: 3px solid #ef4743; }
+    .msg.ok { border-left: 3px solid #2cbb5d; }
+    .msg.warn { border-left: 3px solid #ffa116; }
+    ol { margin: 4px 0 0; padding-left: 18px; }
+    .muted { color: #a6a6a6; font-size: 12px; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    details summary { cursor: pointer; color: #a6a6a6; font-size: 12px; }
+    form { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; margin-top: 8px; }
+    label { color: #a6a6a6; font-size: 12px; }
+    input { font: inherit; background: #2a2a2a; color: #eff1f6; border: 1px solid #3d3d3d; border-radius: 5px; padding: 4px 6px; min-width: 0; }
+    form .full { grid-column: 1 / -1; }
+    code { font-size: 12px; }
+    a { color: #75beff; }
+  </style>
+</head>
+<body>
+  <header><img src="icon128.png" alt=""><span>LeetCode-Debugger</span><span class="v" id="v"></span></header>
+  <main>
+    <button id="start" disabled>🐞 Debugger starten</button>
+    <div id="msg" class="msg">Prüfe diesen Tab …</div>
+    <ul id="checks"></ul>
+    <div class="muted">Tastenkürzel auf LeetCode: Alt+Shift+D</div>
+
+    <section>
+      <h2>Aktualisierung</h2>
+      <div id="upd" class="msg">…</div>
+      <div class="row">
+        <button id="check" class="sec">Jetzt nach Updates suchen</button>
+        <button id="details" class="sec" hidden>Erweiterungs-Details öffnen</button>
+      </div>
+      <details id="settings">
+        <summary>Quelle (GitHub)</summary>
+        <form id="form">
+          <label for="repo">Repo</label><input id="repo" placeholder="besitzer/repo" autocomplete="off">
+          <label for="branch">Zweig</label><input id="branch" placeholder="main" autocomplete="off">
+          <label for="dir">Ordner</label><input id="dir" placeholder="leetcode-debugger" autocomplete="off">
+          <label for="token">Token</label><input id="token" type="password" autocomplete="off">
+          <div class="full muted" id="tokenNote"></div>
+          <div class="full row"><button type="submit" class="sec">Speichern und prüfen</button>
+            <button type="button" id="clearToken" class="sec" hidden>Token löschen</button></div>
+        </form>
+      </details>
+    </section>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

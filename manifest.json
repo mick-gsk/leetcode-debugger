@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "LeetCode-Debugger (lokal)",
+  "version": "2.2.0",
+  "description": "Debugger wie in VS Code direkt im LeetCode-Editor. Aktualisiert sich selbst aus GitHub.",
+  "minimum_chrome_version": "120",
+  "icons": {
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_title": "LeetCode-Debugger",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon128.png"
+    }
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "userScripts"
+  ],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://leetcode.cn/*",
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://leetcode.com/*",
+        "https://leetcode.cn/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "sandbox": {
+    "pages": [
+      "engine.html"
+    ]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "engine.html",
+        "boot.js",
+        "engine.js",
+        "tracer.js",
+        "vendor/acorn.js"
+      ],
+      "matches": [
+        "https://leetcode.com/*",
+        "https://leetcode.cn/*"
+      ]
+    }
+  ]
+}
