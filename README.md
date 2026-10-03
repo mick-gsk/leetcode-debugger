@@ -122,7 +122,13 @@ springen und mit ↶ rückwärts gehen. Der **erste** Wert, der nicht stimmt, ze
 
 - **Variablen:** pro Schritt, getrennt in *lokal* und *Closure*, mit vorherigem Wert bei Änderungen.
 - **Aufrufe und Rückgaben:** als eigene Schritte, dazu die Aufrufkette.
-- **Fehler:** mit Zeile (im Editor rot) und deutschem Hinweis für die häufigsten Fälle.
+- **Fehler:** mit Zeile (im Editor rot) und deutschem Hinweis für die häufigsten Fälle – sichtbar in
+  der Leiste, nicht nur im Tooltip. Auch Fehler, die LeetCodes Prüf-Code abfängt (z. B. bei
+  „To Be Or Not To Be“ wird daraus sonst still `{"error": …}`): Der Debugger zeigt, welche Zeile
+  geworfen hat, und springt dorthin.
+- **Auffälligkeiten ohne Ausführen:** Fehler, die JavaScript still schluckt – eine Methode zweimal
+  im selben Objekt (die zweite ersetzt die erste), ein Parameter, der den gleichnamigen äußeren
+  verdeckt, `throw "Text"` statt `throw new Error("Text")`. Erscheinen nur, wenn ein Beispiel scheitert.
 - **Endlosschleifen und Rekursion ohne Ende:** werden abgebrochen, statt den Tab einzufrieren.
 - **Async:** Promises, `async`/`await`, `setTimeout`/`setInterval`.
 - **Aufgabentypen:** Funktionen (auch solche, die Funktionen zurückgeben), `Array.prototype.…`,
@@ -199,6 +205,6 @@ Rahmen und neuer Code nicht mehr zusammenpassen, `shell` in `update.json` und `S
 ## Tests
 
 ```bash
-node test/tracer.test.js                              # Kern: 26 Fälle
-NODE_PATH=$(npm root -g) node test/e2e.js [bild.png]  # Extension in Chromium gegen LeetCode- und GitHub-Nachbau: 28 Abläufe
+node test/tracer.test.js                              # Kern: 28 Fälle
+NODE_PATH=$(npm root -g) node test/e2e.js [bild.png]  # Extension in Chromium gegen LeetCode- und GitHub-Nachbau: 29 Abläufe
 ```

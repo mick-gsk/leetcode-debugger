@@ -155,12 +155,12 @@
       } else if (block) {
         add(start, `__e(${fid},${GET});try{`, 'open', depth);
         stmtList(node.body.body, depth + 1);
-        add(node.body.end - 1, `}finally{__x(${fid})}`, 'close', depth);
+        add(node.body.end - 1, `}catch(__err){throw __k(__err)}finally{__x(${fid})}`, 'close', depth);
       } else {
         const rid = site({ kind: 'return', line: node.body.loc.start.line, names: visible(start) });
         add(start, `{__e(${fid},${GET});try{return __r(${rid},${GET},`, 'open', depth);
         walk(node.body, node, depth + 1);
-        add(node.body.end, `)}finally{__x(${fid})}}`, 'close', depth);
+        add(node.body.end, `)}catch(__err){throw __k(__err)}finally{__x(${fid})}}`, 'close', depth);
       }
       fnStack.pop();
       scopes.pop();
@@ -416,7 +416,7 @@
 
     const toErr = (e) => {
       if (e instanceof StepLimit) return { kind: 'limit', name: 'Abbruch', message: e.message, line: lastLine };
-      const name = (e && e.name) || 'Error';
+      const name = e && typeof e === 'object' ? e.name || 'Error' : `throw ${typeof e}`;
       const message = e && e.message !== undefined ? String(e.message) : String(e);
       let line = lastLine;
       const m = e && typeof e.stack === 'string' && e.stack.match(/<anonymous>:(\d+):(\d+)/);
@@ -424,7 +424,19 @@
       return { kind: 'runtime', name, message, line };
     };
 
-    const fail = (e) => { if (!res.error) res.error = toErr(e); };
+    const fail = (e) => { if (!res.error) { res.error = toErr(e); errObj = e; } };
+    // Erster Fehler, der eine Funktion deines Codes verlässt – auch wenn der Testaufruf ihn fängt
+    // (LeetCodes Prüf-Code macht daraus sonst still {"error": …}). Ein Schritt, an der Stelle des Wurfs.
+    let thrownObj, errObj, hasThrown = false;
+    const caught = (e) => {
+      if (e instanceof StepLimit || (hasThrown && e === thrownObj)) return e;
+      if (!hasThrown) {
+        hasThrown = true; thrownObj = e;
+        res.thrown = Object.assign(toErr(e), { step: res.steps.length });
+        event('error', { error: res.thrown, line: res.thrown.line, thrown: true }, true);
+      }
+      return e;
+    };
 
     const hooks = {
       __s(id, get) {
@@ -453,6 +465,7 @@
         return v;
       },
       __done(v) { res.hasResult = true; res.result = v; return v; },
+      __k: caught,
     };
 
     const fakeConsole = {};
@@ -485,7 +498,7 @@
 
     let fn;
     try {
-      fn = (0, eval)('(async function(console,setTimeout,clearTimeout,setInterval,clearInterval,__s,__t,__e,__x,__r,__done){' +
+      fn = (0, eval)('(async function(console,setTimeout,clearTimeout,setInterval,clearInterval,__s,__t,__e,__x,__r,__done,__k){' +
         inst.code + helperSource(src) + '\n})');
     } catch (e) {
       res.error = { kind: 'internal', name: e.name, message: 'Interner Fehler beim Vorbereiten: ' + e.message, line: null };
@@ -498,7 +511,7 @@
 
     try {
       const r = await race(fn(fakeConsole, mySetTimeout, myClear, mySetInterval, myClear,
-        hooks.__s, hooks.__t, hooks.__e, hooks.__x, hooks.__r, hooks.__done));
+        hooks.__s, hooks.__t, hooks.__e, hooks.__x, hooks.__r, hooks.__done, hooks.__k));
       if (r === TIMEOUT) res.timedOut = true;
       if (!res.timedOut && res.hasResult && res.result && typeof res.result.then === 'function') {
         const v = await race(res.result);
@@ -513,7 +526,7 @@
     for (const id of timers.keys()) myClear(id);
     if (!aborted) aborted = new StepLimit('Lauf beendet.');   // späte Callbacks stoppen
 
-    if (res.error) event('error', { error: res.error, line: res.error.line });
+    if (res.error && !(hasThrown && errObj === thrownObj)) event('error', { error: res.error, line: res.error.line });
     else if (res.timedOut) event('timeout', {});
     if (res.hasResult && !res.error) {
       res.resultText = fmt(res.result);
@@ -875,17 +888,107 @@
 
   // ---------------------------------------------------------------- Fehler-Hinweise
 
-  function hint(err) {
+  // ---------------------------------------------------------------- Auffälligkeiten (ohne Ausführen)
+  // Fehler, die JavaScript still schluckt: Sie werfen keinen Fehler, liefern aber das Falsche.
+  // Nur Muster, die praktisch immer ein Versehen sind – sonst wird die Liste Rauschen.
+  function lint(code) {
+    let ast;
+    try {
+      ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'script', locations: true, allowReturnOutsideFunction: true, allowAwaitOutsideFunction: true });
+    } catch (e) { return []; }
+    const out = [];
+    const keyName = (k, computed) => (computed ? null : k.type === 'Identifier' ? k.name : k.type === 'Literal' ? String(k.value) : null);
+    const fnTypes = ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'];
+    const scopes = [];   // Parameter der umschließenden Funktionen: [{ names: Map(name → Zeile) }]
+
+    function dupes(items, what) {
+      const seen = new Map();
+      for (const it of items) {
+        if (!it.name) continue;
+        const prev = seen.get(it.name);
+        // get + set mit gleichem Namen gehören zusammen
+        if (prev && !(prev.kind !== it.kind && /^(get|set)$/.test(prev.kind) && /^(get|set)$/.test(it.kind)))
+          out.push({ line: it.line, kind: 'dupe', name: it.name,
+            message: `„${it.name}“ ist in diesem ${what} zweimal definiert (Zeile ${prev.line} und ${it.line}). Die zweite Definition ersetzt die erste – die aus Zeile ${prev.line} läuft nie.` });
+        else seen.set(it.name, it);
+      }
+    }
+
+    function walk(n) {
+      if (!n || typeof n.type !== 'string') return;
+      if (n.type === 'ObjectExpression')
+        dupes(n.properties.filter((x) => x.type === 'Property').map((x) => ({ name: keyName(x.key, x.computed), kind: x.kind, line: x.loc.start.line })), 'Objekt');
+      if (n.type === 'ClassBody')
+        dupes(n.body.filter((x) => x.type === 'MethodDefinition' && !x.static && x.kind !== 'constructor')
+          .map((x) => ({ name: keyName(x.key, x.computed), kind: x.kind, line: x.loc.start.line })), 'Klasse');
+      if (n.type === 'ThrowStatement' && n.argument && (n.argument.type === 'Literal' || n.argument.type === 'TemplateLiteral')) {
+        const t = code.slice(n.argument.start, n.argument.end);
+        out.push({ line: n.loc.start.line, kind: 'throw',
+          message: `throw ${t} wirft einen bloßen Wert, kein Error-Objekt. Wer den Fehler fängt und e.message liest – so wie LeetCodes Prüf-Code –, bekommt undefined. Schreib throw new Error(${t}).` });
+      }
+      if (fnTypes.includes(n.type)) {
+        const own = new Map();
+        for (const prm of n.params) for (const id of paramIds(prm)) {
+          own.set(id.name, id.loc.start.line);
+          for (let i = scopes.length - 1; i >= 0; i--) {
+            if (!scopes[i].has(id.name)) continue;
+            out.push({ line: id.loc.start.line, kind: 'shadow', name: id.name,
+              message: `Der Parameter „${id.name}“ (Zeile ${id.loc.start.line}) verdeckt „${id.name}“ aus Zeile ${scopes[i].get(id.name)}. In dieser Funktion meint „${id.name}“ nur noch den eigenen Parameter – an den äußeren Wert kommst du hier nicht mehr heran. Gib einem der beiden einen anderen Namen.` });
+            break;
+          }
+        }
+        scopes.push(own);
+        for (const prm of n.params) walk(prm);
+        walk(n.body);
+        scopes.pop();
+        return;
+      }
+      for (const k of Object.keys(n)) {
+        if (k === 'loc') continue;
+        const v = n[k];
+        if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v.type === 'string') walk(v);
+      }
+    }
+    function paramIds(p) {
+      if (!p) return [];
+      if (p.type === 'Identifier') return [p];
+      if (p.type === 'AssignmentPattern') return paramIds(p.left);
+      if (p.type === 'RestElement') return paramIds(p.argument);
+      return [];   // Destructuring: zu selten verwechselt, um zu warnen
+    }
+    walk(ast);
+    // Gleiches Muster mehrfach (zweimal throw "…", zweimal val verdeckt): einmal melden, Zeilen sammeln
+    const RANK = { dupe: 0, shadow: 1, throw: 2 }, merged = [];
+    for (const f of out) {
+      const same = merged.find((g) => g.kind === f.kind && g.kind !== 'dupe' && (g.name || '') === (f.name || ''));
+      if (same) same.also.push(f.line); else merged.push(Object.assign({ also: [] }, f));
+    }
+    return merged.sort((a, b) => RANK[a.kind] - RANK[b.kind] || a.line - b.line).slice(0, 3)
+      .map((f) => ({ line: f.line, kind: f.kind, message: f.message + (f.also.length ? ` (Ebenso Zeile ${f.also.join(', ')}.)` : '') }));
+  }
+
+  function hint(err, code) {
     if (!err) return '';
     const m = err.message || '';
     let x;
     if (err.kind === 'limit') return 'Geh im Verlauf zurück und schau, ob sich die Schleifenbedingung bzw. der Abbruchfall überhaupt ändert.';
     if (err.kind === 'syntax') return 'Der Code lässt sich nicht lesen. Die Zeilenangabe zeigt, wo der Parser aufgegeben hat – der eigentliche Fehler steht oft eine Zeile davor (fehlende Klammer, Komma, Semikolon).';
     if (/Maximum call stack/.test(m)) return 'Rekursion ohne Ende: Der Abbruchfall wird nie erreicht. Prüf im Verlauf, ob das Argument bei jedem Aufruf kleiner wird.';
+    if (code && (x = m.match(/(?:^|\.)([\w$]+) is not a function/)) && !new RegExp('(^|[^\\w$])' + x[1] + '\\s*[(:=]').test(code.replace(/\/\/.*$/gm, '')))
+      return `„${x[1]}“ gibt es in deinem Code nirgends – das Objekt hat diese Methode nicht. Tippfehler, oder hast du einer zweiten Methode aus Versehen denselben Namen gegeben?`;
     if ((x = m.match(/(\S+) is not a function/))) return `Du rufst ${x[1]} als Funktion auf, aber es ist keine. Schau in den Variablen nach, welchen Wert es an dieser Stelle hat.`;
     if ((x = m.match(/Cannot read propert(?:y|ies) of (undefined|null)(?: \(reading '([^']*)'\))?/)))
       return `Ein Wert ist ${x[1]}, und du greifst trotzdem auf ${x[2] ? '.' + x[2] : 'eine Eigenschaft'} zu. Geh einen Schritt zurück und such die Variable, die ${x[1]} ist.`;
     if ((x = m.match(/Cannot set propert(?:y|ies) of (undefined|null)/))) return `Du schreibst in eine Eigenschaft von ${x[1]}. Das Objekt existiert an dieser Stelle noch nicht.`;
+    if (code && (x = m.match(/^([\w$]+) is not defined/))) {
+      // Methode im Objekt: „toBe(val) {“ oder „toBe: function“ am Zeilenanfang
+      const mm = new RegExp('^[ \\t]*(?:async\\s+)?' + x[1] + '\\s*(?:\\([^)]*\\)\\s*\\{|:\\s*(?:async\\s+)?(?:function|\\())', 'm').exec(code);
+      if (mm) {
+        const line = code.slice(0, mm.index).split('\n').length;
+        return `„${x[1]}“ ist nur eine Methode deines Objekts (Zeile ${line}), keine eigene Variable. Ein Aufruf ${x[1]}(…) ohne Objekt davor findet sie nicht. Wolltest du einen Wert vergleichen, nimm die Variable direkt (z. B. den Parameter) statt die Methode aufzurufen.`;
+      }
+    }
     if ((x = m.match(/(\S+) is not defined/))) return `${x[1]} gibt es an dieser Stelle nicht: Tippfehler, nicht deklariert, oder in einem anderen Scope deklariert.`;
     if (/Assignment to constant/.test(m)) return 'Eine const-Variable wird neu zugewiesen. Nimm let, wenn sich der Wert ändern soll.';
     if ((x = m.match(/Cannot access '([^']*)' before initialization/))) return `${x[1]} wird benutzt, bevor die let/const-Zeile erreicht ist (Temporal Dead Zone). Deklaration nach oben ziehen.`;
@@ -895,7 +998,7 @@
   }
 
   const api = {
-    instrument, run, fmt, compare, timed, parseExamples, parseInput, guessHarness, findMain, hint, normalize, deepEqual,
+    instrument, run, fmt, compare, timed, lint, parseExamples, parseInput, guessHarness, findMain, hint, normalize, deepEqual,
     parseResultPanel, submissionCase, caseSignature,
   };
   root.LCTracer = api;

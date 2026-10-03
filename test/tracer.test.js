@@ -227,6 +227,40 @@ Output: 50`)[0];
   assert.match(T.guessHarness(tl, e2), /f\(fn, t\)\(inputs\)/);
 });
 
+t('Gefangener Fehler wird mit Zeile erfasst, Auffälligkeiten ohne Ausführen', async () => {
+  const sol = [
+    'var expect = function(val) {',
+    '    return {',
+    '        toBe(val) {',
+    '            if (toBe(val) === val) return true;',
+    '            throw "Not Equal";',
+    '        },',
+    '        toBe(val) { return true; },',
+    '    };',
+    '};'].join('\n');
+  const ex = T.parseExamples('Input: func = () => expect(5).toBe(5)\nOutput: {"value": true}')[0];
+  const r = await T.run(sol, T.guessHarness(sol, ex, 'to-be-or-not-to-be'));
+  assert.strictEqual(r.error, null, 'der Prüf-Code fängt den Fehler');
+  assert.strictEqual(T.compare(r.result, ex.output), true);
+  const bad = sol.replace('toBe(val) { return true; },', '');
+  const r2 = await T.run(bad, T.guessHarness(bad, ex, 'to-be-or-not-to-be'));
+  assert.strictEqual(r2.thrown.name, 'ReferenceError');
+  assert.strictEqual(r2.thrown.line, 4);
+  assert.strictEqual(r2.steps[r2.thrown.step].kind, 'error');
+  assert.match(T.hint(r2.thrown, bad), /nur eine Methode deines Objekts \(Zeile 3\)/);
+  const kinds = T.lint(sol).map((f) => f.kind);
+  assert.deepStrictEqual(kinds, ['dupe', 'shadow', 'throw']);
+  assert.match(T.lint(sol)[1].message, /\(Ebenso Zeile 7\.\)/);
+  assert.deepStrictEqual(T.lint('class A { get x() { return 1; } set x(v) {} }'), [], 'get/set-Paar ist kein Duplikat');
+  assert.deepStrictEqual(T.lint('var f = function(a) { return a.map((x) => x * 2); };'), []);
+});
+
+t('Uncaught-Fehler erscheint nur einmal im Verlauf', async () => {
+  const r = await T.run('function f(a) {\n  return a.b.c;\n}', 'f({});');
+  assert.strictEqual(r.error.line, 2);
+  assert.strictEqual(r.steps.filter((s) => s.kind === 'error').length, 1);
+});
+
 t('ListNode-Aufgabe: Eingabe wird umgewandelt, Ausgabe verglichen', async () => {
   const sol = `/**
  * Definition for singly-linked list.

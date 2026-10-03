@@ -77,6 +77,12 @@
       }
       const tip = line2 + (vd && vd.lead ? '\n\n' + vd.lead : '') + (vd && vd.hint ? '\n\n' + vd.hint : '');
       if (line2) h.push(`<div class="r2 ${cls2}" title="${esc(tip)}">${esc(line2)}</div>`);
+      // Erklärung sichtbar statt nur im Tooltip: Wer scheitert, soll lesen können, was genau falsch ist
+      if (vd && vd.cls === 'bad' && !V.running) {
+        if (vd.detail && vd.detail !== line2) h.push(`<div class="r2x msg">${esc(vd.detail)}</div>`);
+        if (vd.hint) h.push(`<div class="r2x">💡 ${esc(vd.hint)}</div>`);
+        for (const n of vd.notes || []) h.push(`<div class="r2x note">⚠ Zeile ${n.line}: ${esc(n.message)}</div>`);
+      }
 
       // Zeile 3: aktueller Schritt
       if (step) {
@@ -281,6 +287,9 @@
     .ok .st { color: var(--ok); } .bad .st, .err .st { color: var(--bad); }
     .r2 { padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
     .r2.ok { color: var(--ok); } .r2.bad { color: var(--bad); } .r2.muted { color: var(--muted); font-weight: 400; }
+    .r2x { padding: 1px 4px; white-space: normal; line-height: 1.4; font-size: 12px; overflow-wrap: anywhere; }
+    .r2x.msg { color: var(--bad); font-family: var(--mono, Consolas, monospace); }
+    .r2x.note { color: var(--warn, #cca700); }
     .r3 { display: flex; gap: 8px; padding: 0 4px; color: var(--muted); white-space: nowrap; overflow: hidden; }
     .pos { color: var(--text); font-variant-numeric: tabular-nums; }
     .et { overflow: hidden; text-overflow: ellipsis; }

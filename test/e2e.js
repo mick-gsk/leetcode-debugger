@@ -65,6 +65,41 @@ var canConstruct = function (ransomNote, magazine) {
 
     return charEnthalten
 };`;
+// To Be Or Not To Be wie im echten Versuch: toBe doppelt, ruft sich als freien Namen auf, throw "…".
+// LeetCodes Prüf-Code fängt den Fehler – ohne Hilfe sieht man nur ein falsches Ergebnis.
+const TOBE = `/**
+ * @param {string} val
+ * @return {Object}
+ */
+var expect = function(val) {
+    return {
+        toBe(val) {
+            if(toBe(val) === val){
+                return true
+            } else {
+                throw "Not Equal"
+            }
+        },
+        toBe(val) {
+            if(toBe(val) !== val){
+                return true
+            } else {
+                throw "Equal"
+            }
+        }
+    }
+};`;
+const TOBE_DESC = `
+    <p>Write a function expect that helps developers test their code.</p>
+    <p><strong>Example 1:</strong></p>
+    <pre><strong>Input:</strong> func = () =&gt; expect(5).toBe(5)
+<strong>Output:</strong> {"value": true}
+<strong>Explanation:</strong> 5 === 5 so this expression returns true.</pre>
+    <p><strong>Example 2:</strong></p>
+    <pre><strong>Input:</strong> func = () =&gt; expect(5).notToBe(null)
+<strong>Output:</strong> {"value": true}
+<strong>Explanation:</strong> 5 !== null so this expression returns true.</pre>
+    <p><strong>Constraints:</strong></p>`;
 const RANSOM_DESC = `
     <p>Given two strings ransomNote and magazine, return true if ransomNote can be constructed by using the letters from magazine and false otherwise.</p>
     <p><strong>Example 1:</strong></p>
@@ -194,6 +229,7 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     const u = route.request().url();
     if (/\/submissions\/detail\/\d+\/check\//.test(u)) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(CHECK) });
     if (/\/problems\/[^/]+\/submit\//.test(u)) { submits.push(route.request().postData()); return route.fulfill({ contentType: 'application/json', body: '{"submission_id":987654321}' }); }
+    if (/\/problems\/to-be-or-not-to-be\//.test(u)) return route.fulfill({ contentType: 'text/html; charset=utf-8', body: makePage('To Be Or Not To Be', TOBE_DESC, TOBE) });
     if (/\/problems\/ransom-note\//.test(u)) return route.fulfill({ contentType: 'text/html; charset=utf-8', body: makePage('Ransom Note', RANSOM_DESC, RANSOM) });
     return route.fulfill({ contentType: 'text/html; charset=utf-8', body: PAGE });
   });
@@ -443,6 +479,22 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     assert.ok(await page.locator('.tb').isVisible());
   });
 
+  await step('Gefangener Fehler: Zeile, Erklärung und stille Fehler sichtbar (To Be Or Not To Be)', async () => {
+    await page.goto('https://leetcode.com/problems/to-be-or-not-to-be/');
+    await page.locator('.lcdbg-overlay .pill').waitFor({ timeout: 5000 });
+    await page.locator('.pill').click();
+    await waitText('.r2', /Beispiel 1: dein Code wirft ReferenceError in Zeile 15/);
+    const extra = (await page.locator('.r2x').allInnerTexts()).join(' | ');
+    assert.match(extra, /toBe is not defined/);
+    assert.match(extra, /nur eine Methode deines Objekts \(Zeile 7\)/);
+    assert.match(extra, /Zeile 14: „toBe“ ist in diesem Objekt zweimal definiert/);
+    assert.match(extra, /verdeckt „val“ aus Zeile 5/);
+    assert.match(extra, /throw new Error\("Not Equal"\)/);
+    await page.waitForTimeout(100);
+    const zone = await page.evaluate(() => window.__zones.map((z) => [z.afterLineNumber, z.domNode.textContent]));
+    assert.deepStrictEqual(zone.map((z) => z[0]), [15], 'Fehlerkasten an der Stelle des Wurfs');
+  });
+
   // ---------------------------------------------------------------- Gescheiterte Einsendung
 
   await step('Einsendung scheitert: Fall wird mitgehört, Knopf meldet ihn', async () => {
@@ -587,7 +639,7 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     const p = await popup();
     await p.locator('#check').click();
     await p.waitForFunction(() => /Update auf v9\.0\.0 geladen/.test(document.querySelector('#upd').innerText), null, { timeout: 8000 });
-    assert.match(await p.locator('#checks').innerText(), /Debugger 2\.2\.0 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
+    assert.match(await p.locator('#checks').innerText(), /Debugger 2\.3\.0 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
     if (SHOT) { await p.setViewportSize({ width: 340, height: 420 }); await p.screenshot({ path: SHOT.replace(/\.png$/, '-update.png') }); }
     assert.match(await p.locator('#v').innerText(), /v9\.0\.0/);
     assert.ok(gh.auth.includes('Bearer geheim'), 'Token geht als Authorization mit');

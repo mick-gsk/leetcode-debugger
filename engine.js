@@ -163,7 +163,16 @@
 
   function setRun(run) {
     S.run = run;
-    S.i = run.error ? Math.max(0, run.steps.length - 1) : 0;
+    // Bei falschem Ergebnis mit gefangenem Fehler direkt an die Stelle des Wurfs springen
+    S.i = run.error ? Math.max(0, run.steps.length - 1)
+      : run.thrown && statusOf(run, S.sel) === 'bad' ? Math.min(run.thrown.step, run.steps.length - 1) : 0;
+  }
+
+  // Auffälligkeiten im Code (ohne Ausführen), nur im Code im Editor, nicht im Testaufruf
+  let lintFor = null, lintOut = [];
+  function notes() {
+    if (lintFor !== S.code) { lintFor = S.code; lintOut = T.lint(S.code || ''); }
+    return lintOut;
   }
 
   // ------------------------------------------------------------ Schritte
@@ -284,7 +293,7 @@
     if (run.error) {
       const e = run.error;
       const what = e.kind === 'syntax' ? 'Syntaxfehler' : e.kind === 'limit' ? 'abgebrochen' : `Fehler (${e.name})`;
-      return { cls: 'bad', title: `💥 ${label}: ${what}${where(e.line)}`, detail: e.message, hint: T.hint(e) };
+      return { cls: 'bad', title: `💥 ${label}: ${what}${where(e.line)}`, detail: e.message, hint: T.hint(e, S.code), notes: notes() };
     }
     if (run.timedOut) return { cls: 'bad', title: `⏱ ${label}: nach 4 s abgebrochen`, hint: 'Ein Promise oder Timer wurde nie fertig. Prüf, ob resolve bzw. der Callback überhaupt aufgerufen wird.' };
     if (!run.hasResult) return { cls: '', title: `${label}: kein Ergebnis`, hint: 'Die letzte Zeile im Testaufruf ist kein Ausdruck, deshalb gibt es nichts zu vergleichen.' };
@@ -296,8 +305,16 @@
       hint: 'Derselbe Code liefert lokal das richtige Ergebnis. Typische Ursache: Variablen außerhalb der Funktion behalten ihren Wert zwischen den Testfällen von LeetCode.',
     };
     if (c === true) return { cls: 'ok', title: S.allOk ? `✅ ${S.summary}` : `✅ ${label} stimmt`, rows: [['Ergebnis', run.resultText]] };
+    // LeetCodes Prüf-Code fängt Fehler und macht {"error": …} daraus – den Fehler selbst zeigen, mit Zeile
+    if (c === false && run.thrown) {
+      const e = run.thrown;
+      return {
+        cls: 'bad', title: `💥 ${label}: dein Code wirft ${e.name}${where(e.line)}`, detail: e.message,
+        rows: [['erwartet', exp], ['bekommen', run.resultText]], hint: T.hint(e, S.code), notes: notes(),
+      };
+    }
     if (c === false) return {
-      cls: 'bad', title: `❌ ${label}: falsches Ergebnis`, rows: [['erwartet', exp], ['bekommen', run.resultText]],
+      cls: 'bad', title: `❌ ${label}: falsches Ergebnis`, rows: [['erwartet', exp], ['bekommen', run.resultText]], notes: notes(),
       lead: lcNote ? `Diesen Fall hat LeetCode bei der Einsendung gemeldet (${lcNote.status || 'Fehlschlag'}).` : null,
       hint: 'Spring ans Ende (⏭) und geh mit ◀ rückwärts. Der erste Wert, der nicht deiner Erwartung entspricht, zeigt auf den Fehler.',
     };
@@ -387,7 +404,7 @@
         vars: s.vars.map((x) => [x.name, short(x.text, 300)]),
         inline: inlineValues(S.i, inEditor ? s.line : null),
         exception: s.kind === 'error' && inEditor
-          ? { line: s.line, title: `${s.error.name}: ${s.error.message}`, hint: T.hint(s.error) } : null,
+          ? { line: s.line, title: `${s.error.name}: ${s.error.message}`, hint: T.hint(s.error, S.code) } : null,
       };
       v.truncated = run.truncated ? `Nur die ersten ${run.steps.length} von ${run.totalSteps} Schritten aufgezeichnet.` : null;
     }
