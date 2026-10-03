@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "LeetCode-Debugger (lokal)",
-  "version": "2.3.1",
-  "description": "Debugger wie in VS Code direkt im LeetCode-Editor. Aktualisiert sich selbst aus GitHub.",
+  "version": "2.3.2",
+  "version_name": "Grundpaket – laufende Version: Käfer-Symbol",
+  "description": "Debugger wie in VS Code direkt im LeetCode-Editor. Aktualisiert sich selbst aus GitHub; welche Version läuft, zeigt das Fenster hinter dem Käfer-Symbol.",
   "minimum_chrome_version": "120",
   "icons": {
     "128": "icon128.png"
