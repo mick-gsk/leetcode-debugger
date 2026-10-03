@@ -12,6 +12,8 @@ verdeckt.
   die Variablen gerade haben (`x = 4`). Mit der Maus über einer Variable siehst du ihren Wert.
 - **Fehler** erscheinen wie in VS Code als roter Kasten *unter* der Fehlerzeile, mit Hinweis.
 - **Variablen, Aufrufstapel, Ausgabe (`console.log`) und Testaufruf** klappen über ({x}) auf.
+- **Auch im Fokus-Modus (🧘):** Dort nutzt LeetCode CodeMirror statt Monaco. Die Leiste sitzt
+  trotzdem oben rechts am Editor, mit aktueller Zeile, Inline-Werten und Sprung zur Fehlerzeile.
 - **Gescheiterte Einsendung:** Scheitert „Submit“ an einem versteckten Testfall, merkt sich der
   Debugger genau diesen Fall (Eingabe + erwartet). Der Knopf wird rot (**🐞 Fehlschlag debuggen**),
   und ein Klick springt direkt in diesen Fall – auch wenn alle Beispiele stimmen.
@@ -142,6 +144,8 @@ springen und mit ↶ rückwärts gehen. Der **erste** Wert, der nicht stimmt, ze
 ## Grenzen (ehrlich)
 
 - **Nur JavaScript.**
+- **Fokus-Modus mit weniger Komfort:** Haltepunkte per Klick und der rote Fehlerkasten unter der Zeile
+  gibt es nur im normalen Layout; im Fokus-Modus steht der Fehler in der Leiste, die Zeile ist rot hinterlegt.
 - **Der Testaufruf ist geraten.** Bei Standardformen und den „30 Days“ trifft er. Bei
   anderen Aufgaben mit eigenem Eingabeformat musst du ihn anpassen.
 - **Kein Ersatz für Submit:** Der Code läuft lokal, nicht auf dem LeetCode-Server. Die versteckten

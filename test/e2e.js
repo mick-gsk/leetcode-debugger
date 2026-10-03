@@ -205,7 +205,34 @@ const makePage = (title, desc, code) => `<!doctype html><html class="dark"><head
   };
   window.__gutterClick = (line) => mouseCb && mouseCb({ target: { type: 2, position: { lineNumber: line, column: 1 } } });
   window.__hover = null;
-  if (!/nomonaco/.test(location.search)) window.monaco = {
+  // ?cm=1: LeetCodes Fokus-Modus – CodeMirror 6 statt Monaco. Nachgebaut ist nur, was der Debugger
+  // von der EditorView braucht (am DOM unter .cm-content → cmView.view, wie bei CodeMirror selbst)
+  if (/cm=1/.test(location.search)) {
+    node.className = 'cm-editor';
+    node.innerHTML = '<div class="cm-scroller" style="position:relative;overflow:auto;height:100%;display:flex">' +
+      '<div class="cm-gutters" style="width:40px;flex:none"></div>' +
+      '<div class="cm-content" data-language="javascript" contenteditable="true" style="flex:1;font:13px Menlo, Consolas, monospace;color:#d4d4d4"></div></div>';
+    const content = node.querySelector('.cm-content'), LH = 20, CW = 8;
+    const split = () => window.__code.split('\\n');
+    const starts = () => { let o = 0; return split().map((t) => { const s = o; o += t.length + 1; return s; }); };
+    const lineOf = (pos) => { const st = starts(); let n = 1; while (n < st.length && st[n] <= pos) n++; return n; };
+    const draw = () => { content.innerHTML = split().map((t) => '<div class="cm-line" style="height:' + LH + 'px;white-space:pre">' + (t.replace(/&/g, '&amp;').replace(/</g, '&lt;') || ' ') + '</div>').join(''); };
+    draw();
+    window.__setCode = (c) => { window.__code = c; draw(); };
+    content.cmView = { view: {
+      state: { get doc() {
+        const L = split(), st = starts();
+        return { lines: L.length, toString: () => window.__code, line: (n) => ({ number: n, from: st[n - 1], to: st[n - 1] + L[n - 1].length }) };
+      } },
+      get documentTop() { return content.getBoundingClientRect().top + parseFloat(getComputedStyle(content).paddingTop); },
+      lineBlockAt: (pos) => ({ top: (lineOf(pos) - 1) * LH, height: LH }),
+      coordsAtPos: (pos) => { const n = lineOf(pos), r = content.getBoundingClientRect(); return { left: r.left + (pos - starts()[n - 1]) * CW, right: r.left + (pos - starts()[n - 1]) * CW }; },
+      domAtPos: (pos) => ({ node: content.children[lineOf(pos) - 1], offset: 0 }),
+      dispatch: (tr) => { window.__cmSel = tr.selection; },
+      focus() {}, requestMeasure() {},
+    } };
+  }
+  if (!/nomonaco|cm=1/.test(location.search)) window.monaco = {
     Range, editor: { getEditors: () => [editor], getModels: () => [model] },
     languages: { registerHoverProvider: (lang, p) => { if (lang === 'javascript') window.__hover = p; } },
   };
@@ -483,6 +510,41 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     assert.ok(await page.locator('.tb').isVisible());
   });
 
+  await step('Fokus-Modus (CodeMirror): Leiste am Editor, Code gelesen, Zeile markiert, Sprung zur Zeile', async () => {
+    await page.goto('https://leetcode.com/problems/function-composition/?cm=1');
+    await page.locator('#lcdbg-host .pill').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    const ed = await page.locator('#editor').boundingBox(), b = await page.locator('.pill').boundingBox();
+    assert.ok(b.y < ed.y + 40 && b.x + b.width > ed.x + ed.width - 60, 'Knopf oben rechts im Editor, nicht unten in der Ecke: ' + JSON.stringify(b));
+    await page.locator('.pill').click();
+    await waitText('.r2', /Alle 3 Beispiele stimmen/);
+    const pad = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.cm-content')).paddingTop));
+    assert.ok(pad > 30, 'Platz für die Leiste über dem Code: ' + pad);
+    // die ersten Schritte liegen im Testaufruf – weiter, bis eine Zeile im Code dran ist
+    for (let k = 0; k < 15 && !(await page.locator('.lcdbg-cm-layer .lcdbg-cm-bar').count()); k++) await click('[data-kind="next"]');
+    const hit = await page.evaluate(() => {
+      const bar = document.querySelector('.lcdbg-cm-layer .lcdbg-cm-bar'), iv = document.querySelector('.lcdbg-cm-layer .lcdbg-cm-iv.cur');
+      if (!bar) return null;
+      const y = bar.getBoundingClientRect().top;
+      const i = [...document.querySelectorAll('.cm-line')].findIndex((l) => Math.abs(l.getBoundingClientRect().top - y) < 2);
+      return { line: i + 1, text: iv ? iv.textContent : '' };
+    });
+    assert.ok(hit && hit.line > 0, 'Markierung liegt auf einer Codezeile: ' + JSON.stringify(hit));
+    await page.evaluate((c) => window.__setCode(c), SOLUTION.replace('fn(acc)', 'fn(acc).value.x'));
+    await page.locator('[data-act="check"]').click();
+    await page.locator('[data-act="menu"]').click();
+    await page.locator('.item', { hasText: 'Beispiel 1' }).click();
+    await waitText('.r2', /TypeError\s*Zeile 8/);
+    assert.ok(await page.locator('.lcdbg-cm-layer .lcdbg-cm-bar.err').count(), 'Fehlerzeile rot');
+    await page.locator('button.ln', { hasText: 'Zeile 8' }).click();
+    const sel = await page.evaluate(() => window.__cmSel);
+    assert.strictEqual(sel.anchor, SOLUTION.split('\n').slice(0, 7).join('\n').length + 1, 'Auswahl am Anfang von Zeile 8');
+    await page.locator('[data-act="close"]').click();
+    await page.waitForTimeout(100);
+    assert.strictEqual(await page.locator('.lcdbg-cm-layer').count(), 0, 'Markierungen weg');
+    assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.cm-content')).paddingTop), '0px');
+  });
+
   await step('Gefangener Fehler: Zeile, Erklärung und stille Fehler sichtbar (To Be Or Not To Be)', async () => {
     await page.goto('https://leetcode.com/problems/to-be-or-not-to-be/');
     await page.locator('.lcdbg-overlay .pill').waitFor({ timeout: 5000 });
@@ -654,7 +716,7 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     const p = await popup();
     await p.locator('#check').click();
     await p.waitForFunction(() => /Update auf v9\.0\.0 geladen/.test(document.querySelector('#upd').innerText), null, { timeout: 8000 });
-    assert.match(await p.locator('#checks').innerText(), /Debugger 2.4.0 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
+    assert.match(await p.locator('#checks').innerText(), /Debugger 2.5.0 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
     if (SHOT) { await p.setViewportSize({ width: 340, height: 420 }); await p.screenshot({ path: SHOT.replace(/\.png$/, '-update.png') }); }
     assert.match(await p.locator('#v').innerText(), /v9\.0\.0/);
     assert.ok(gh.auth.includes('Bearer geheim'), 'Token geht als Authorization mit');

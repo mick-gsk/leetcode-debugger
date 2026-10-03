@@ -29,7 +29,12 @@
     .lcdbg-iv-cur::after { color: #ffcc00 !important; opacity: .95; }
     .vs .lcdbg-iv-cur::after { color: #8a6d00 !important; }
     .lcdbg-iv-err::after { color: #f48771 !important; }
-    .lcdbg-overlay { z-index: 50; }`;
+    .lcdbg-overlay { z-index: 50; }
+    .lcdbg-cm-layer { position: absolute; top: 0; left: 0; width: 0; height: 0; pointer-events: none; z-index: 5; }
+    .lcdbg-cm-bar { position: absolute; background: rgba(255, 255, 0, .13); }
+    .lcdbg-cm-bar.err { background: rgba(244, 135, 113, .22); }
+    .lcdbg-cm-iv { position: absolute; white-space: pre; font-style: italic; color: rgba(255, 255, 255, .5); }
+    .lcdbg-cm-iv.cur { color: #ffcc00; } .lcdbg-cm-iv.err { color: #f48771; }`;
   (document.head || document.documentElement).appendChild(style);
   // Werte am Zeilenende über ::after – läuft mit jeder Monaco-Version (das neuere „after“ nicht)
   const dyn = document.createElement('style');
@@ -55,6 +60,26 @@
     return list[0] || null;
   }
 
+  // Fokus-Modus: LeetCode nimmt dort CodeMirror 6 statt Monaco. Die EditorView hängt am DOM
+  // (.cm-content → cmView.view, ab @codemirror/view 6.38 cmTile.view); mehr braucht es nicht –
+  // keine eigene Kopie von CodeMirror.
+  function findCM() {
+    let best = null, score = -1;
+    for (const el of document.querySelectorAll('.cm-editor')) {
+      const content = el.querySelector('.cm-content');
+      const tile = content && (content.cmView || content.cmTile), view = tile && tile.view;
+      if (!view || !view.state) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 200 || r.height < 60) continue;
+      // der Code-Editor trägt die Sprache, das Testfall-Feld darunter nicht
+      const s = (/javascript|typescript/i.test(content.dataset.language || '') ? 1000 : 0) + view.state.doc.lines;
+      if (s > score) { score = s; best = { el, view, content, lang: content.dataset.language || null }; }
+    }
+    return best;
+  }
+  // Monaco hat Vorrang: im normalen Layout gibt es zusätzlich ein CodeMirror-Feld für die Testfälle
+  const cmOnly = () => (findEditor() ? null : findCM());
+
   // Editor finden, im DOM markieren, Widget einhängen
   function mark() {
     const e = findEditor();
@@ -70,6 +95,13 @@
   setInterval(mark, 1000);
 
   function revealLine(line) {
+    const cm = cmOnly();
+    if (cm && line) {
+      const doc = cm.view.state.doc, ln = doc.line(Math.min(line, doc.lines));
+      cm.view.dispatch({ selection: { anchor: ln.from, head: ln.to }, scrollIntoView: true });
+      cm.view.focus();
+      return;
+    }
     const e = ed || findEditor();
     if (!e || !line) return;
     try {
@@ -192,15 +224,20 @@
       const r = el.getBoundingClientRect(), a = r.width * r.height;
       if (a > area && r.width > 200 && r.height > 120) { best = el; area = a; }
     }
+    if (!best) { const cm = findCM(); if (cm) best = cm.el; }
     floatUI.anchor.classList.toggle('fallback', !best);
-    const r = best ? best.getBoundingClientRect()
+    let r = best ? best.getBoundingClientRect()
       : { left: Math.max(0, innerWidth - 520), top: 60, width: Math.min(520, innerWidth), height: innerHeight - 80 };
+    // Editor oben aus dem Bild gescrollt: Leiste bleibt am oberen Rand, solange der Editor sichtbar ist
+    if (best && r.top < 0 && r.bottom > 80) r = { left: r.left, top: 0, width: r.width, height: r.bottom };
     const key = [r.left, r.top, r.width, r.height].map(Math.round).join(',');
     if (key === lastRect) return;
     lastRect = key;
     Object.assign(floatUI.anchor.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
   }
   function dropFloat() { if (floatHost) floatHost.remove(); }
+  // Im Fokus-Modus scrollt die ganze Seite: die schwebende Leiste sofort mitnehmen, nicht erst im Takt
+  addEventListener('scroll', () => { if (floatHost && floatHost.isConnected) ensureFloat(); }, { capture: true, passive: true });
 
   function tickUI() {
     const e = findEditor();
@@ -217,6 +254,7 @@
     if (!u) return;
     u.render(view);
     if (u === ui) relayout();
+    else paintCM();
   }
 
   // Für das Fenster am Käfer-Symbol: wird die Oberfläche gezeigt, oder verdeckt sie etwas?
@@ -234,7 +272,7 @@
       if (top && !host.contains(top)) covered = top.tagName.toLowerCase() + (top.id ? '#' + top.id : '') +
         (typeof top.className === 'string' && top.className ? '.' + top.className.trim().split(/\s+/).slice(0, 2).join('.') : '');
     }
-    return { widget: isWidget, pillShown: shown, covered, monaco: !!window.monaco, editorFound: !!findEditor() || !!document.querySelector('.monaco-editor') };
+    return { widget: isWidget, pillShown: shown, covered, monaco: !!window.monaco, editorFound: !!findEditor() || !!document.querySelector('.monaco-editor') || !!findCM() };
   }
 
   function setupHover() {
@@ -261,6 +299,8 @@
   function getCode() {
     mark();
     if (ed) return { code: ed.getValue(), lang: langOf(ed.getModel()) };
+    const cm = findCM();
+    if (cm) return { code: cm.view.state.doc.toString(), lang: cm.lang };
     const models = (window.monaco && window.monaco.editor && window.monaco.editor.getModels && window.monaco.editor.getModels()) || [];
     if (models.length) {
       const m = models.find((x) => /javascript|typescript/i.test(langOf(x) || '')) || models[0];
@@ -282,6 +322,7 @@
     };
     if (!state.active && widgetEd) debugMode(widgetEd, false);
     paint();
+    paintCM(true);
     if (state.line) try { (ed || findEditor()).revealLineInCenterIfOutsideViewport(state.line); } catch (err) { /* egal */ }
   }
 
@@ -317,6 +358,62 @@
       try { decos = e.deltaDecorations(decos, list.filter((d) => !d.options.glyphMarginClassName)); } catch (err2) { decos = []; }
     }
     exceptionZone(e, state.active ? state.exception : null);
+  }
+
+  // CodeMirror: aktuelle Zeile und Werte als eigene Ebene im Scrollbereich – scrollt mit dem Code,
+  // ohne CodeMirrors Dekorations-API (die gäbe es nur mit dem Modul selbst)
+  let cmLayer = null, cmPadded = null;
+  const cmStyle = document.createElement('style');
+  (document.head || document.documentElement).appendChild(cmStyle);
+  function paintCM(reveal) {
+    const cm = cmOnly();
+    const open = !!(floatUI && floatUI.open);
+    // Platz oben für die Leiste, damit sie keinen Code verdeckt
+    const pad = cm && open ? floatUI.height + 12 : 0;
+    if (cm) cm.el.setAttribute('data-lcdbg-cm', '');
+    if (pad !== cmPadded) {
+      cmPadded = pad;
+      cmStyle.textContent = pad ? `.cm-editor[data-lcdbg-cm] .cm-content { padding-top: ${pad}px !important; }` : '';
+      if (cm) try { cm.view.requestMeasure(); } catch (err) { /* egal */ }
+    }
+    if (cmLayer && (!cm || !state.active || !cm.el.contains(cmLayer))) { cmLayer.remove(); cmLayer = null; }
+    if (!cm || !state.active) return;
+    const scroller = cm.el.querySelector('.cm-scroller');
+    if (!scroller) return;
+    if (!cmLayer) {
+      cmLayer = document.createElement('div');
+      cmLayer.className = 'lcdbg-cm-layer';
+      scroller.appendChild(cmLayer);
+    }
+    const v = cm.view, doc = v.state.doc, sr = scroller.getBoundingClientRect(), cr = cm.content.getBoundingClientRect();
+    const oy = v.documentTop - sr.top + scroller.scrollTop, ox = scroller.scrollLeft - sr.left;
+    cmLayer.textContent = '';
+    const add = (L, text, cls, bar) => {
+      if (!L || L > doc.lines) return;
+      const ln = doc.line(L), b = v.lineBlockAt(ln.from);
+      if (bar) {
+        const d = document.createElement('div');
+        d.className = 'lcdbg-cm-bar ' + cls;
+        Object.assign(d.style, { top: oy + b.top + 'px', height: b.height + 'px', left: cr.left + ox + 'px', width: cr.width + 'px' });
+        cmLayer.appendChild(d);
+      }
+      const end = text && v.coordsAtPos(ln.to);
+      if (end) {
+        const t = document.createElement('div');
+        t.className = 'lcdbg-cm-iv ' + cls;
+        t.textContent = String(text).replace(/[\r\n]+/g, ' ');
+        Object.assign(t.style, { top: oy + b.top + 'px', height: b.height + 'px', lineHeight: b.height + 'px', left: end.right + ox + 24 + 'px' });
+        cmLayer.appendChild(t);
+      }
+    };
+    for (const [L, text] of state.inline) if (L !== state.line) add(L, text, '', false);
+    if (state.line) add(state.line, state.text, state.error ? 'err' : 'cur', true);
+    if (reveal && state.line && state.line <= doc.lines) {
+      try {
+        const d = v.domAtPos(doc.line(state.line).from).node;
+        (d.nodeType === 1 ? d : d.parentElement).scrollIntoView({ block: 'nearest' });
+      } catch (err) { /* egal */ }
+    }
   }
 
   // Fehler wie VS Code: Kasten unter der Zeile, der den Code nach unten schiebt statt ihn zu verdecken
