@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LeetCode-Debugger (lokal)",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Debugger wie in VS Code direkt im LeetCode-Editor. Aktualisiert sich selbst aus GitHub.",
   "minimum_chrome_version": "120",
   "icons": {

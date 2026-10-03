@@ -978,8 +978,12 @@
     if (code && (x = m.match(/(?:^|\.)([\w$]+) is not a function/)) && !new RegExp('(^|[^\\w$])' + x[1] + '\\s*[(:=]').test(code.replace(/\/\/.*$/gm, '')))
       return `„${x[1]}“ gibt es in deinem Code nirgends – das Objekt hat diese Methode nicht. Tippfehler, oder hast du einer zweiten Methode aus Versehen denselben Namen gegeben?`;
     if ((x = m.match(/(\S+) is not a function/))) return `Du rufst ${x[1]} als Funktion auf, aber es ist keine. Schau in den Variablen nach, welchen Wert es an dieser Stelle hat.`;
-    if ((x = m.match(/Cannot read propert(?:y|ies) of (undefined|null)(?: \(reading '([^']*)'\))?/)))
+    if ((x = m.match(/Cannot read propert(?:y|ies) of (undefined|null)(?: \(reading '([^']*)'\))?/))) {
+      // Häufigster Anfängerfall: Funktion ohne return liefert undefined, der Testaufruf greift darauf zu
+      if (x[1] === 'undefined' && code && !/\breturn\b|=>/.test(code.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')))
+        return `Dein Code enthält kein return – deine Funktion gibt also undefined zurück, und der Testaufruf greift darauf ${x[2] ? '.' + x[2] : 'eine Eigenschaft'} zu. Gib das Objekt zurück: return { ${x[2] || '…'}: … }.`;
       return `Ein Wert ist ${x[1]}, und du greifst trotzdem auf ${x[2] ? '.' + x[2] : 'eine Eigenschaft'} zu. Geh einen Schritt zurück und such die Variable, die ${x[1]} ist.`;
+    }
     if ((x = m.match(/Cannot set propert(?:y|ies) of (undefined|null)/))) return `Du schreibst in eine Eigenschaft von ${x[1]}. Das Objekt existiert an dieser Stelle noch nicht.`;
     if (code && (x = m.match(/^([\w$]+) is not defined/))) {
       // Methode im Objekt: „toBe(val) {“ oder „toBe: function“ am Zeilenanfang
