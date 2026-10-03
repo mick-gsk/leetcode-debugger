@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "LeetCode-Debugger (lokal)",
-  "version": "2.4.0",
+  "version": "3.0.0",
   "version_name": "Grundpaket – laufende Version: Käfer-Symbol",
-  "description": "Debugger wie in VS Code direkt im LeetCode-Editor. Aktualisiert sich selbst aus GitHub; welche Version läuft, zeigt das Fenster hinter dem Käfer-Symbol.",
+  "description": "Debugger wie in VS Code und Lern-Coach direkt im LeetCode-Editor. Aktualisiert sich selbst aus GitHub; welche Version läuft, zeigt das Fenster hinter dem Käfer-Symbol.",
   "minimum_chrome_version": "120",
   "icons": {
     "128": "icon128.png"
@@ -23,7 +23,8 @@
   "host_permissions": [
     "https://leetcode.com/*",
     "https://leetcode.cn/*",
-    "https://api.github.com/*"
+    "https://api.github.com/*",
+    "https://openrouter.ai/*"
   ],
   "background": {
     "service_worker": "background.js"

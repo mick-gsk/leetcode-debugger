@@ -185,15 +185,43 @@
         if (ePending.has(m.qid)) { const r = ePending.get(m.qid); ePending.delete(m.qid); r(m); }
         break;
       case 'saveDraft': store.set('draft:' + m.slug, m.draft); break;
-      case 'view': V = m.view; show(); syncEditor(); hint(); break;
+      case 'view': V = m.view; show(); syncEditor(); hint(); noteRun(); break;
     }
   }
 
   async function check() {
     await pullPanel();
     pushSubs();
+    await markRun();
     action('check');
   }
+
+  // ------------------------------------------------------------ Für den Lern-Coach
+
+  // Nach jeder 🐞-Prüfung: Ereignis lcdbg-run mit dem geprüften Code (zählt dort als Versuch)
+  let run = null;
+  async function markRun() { run = { code: (await askPage('getCode')).code || '', seen: false }; }
+  function noteRun() {
+    if (!run || !V) return;
+    if (V.running) { run.seen = true; return; }
+    if (!run.seen) return;
+    const ex = (V.chips || []).filter((c) => !c.custom), ok = ex.length > 0 && ex.every((c) => c.status === 'ok');
+    window.dispatchEvent(new CustomEvent('lcdbg-run', { detail: {
+      slug: slug(), code: run.code, ok, summary: V.summary || (ok ? 'Alle Beispiele stimmen.' : ''),
+    } }));
+    run = null;
+  }
+
+  const descCache = {};
+  window.LCDBG_HOST = {
+    slug,
+    description() {
+      const s = slug();
+      if (!descCache[s]) descCache[s] = Promise.resolve(descriptionFromDom()).then((t) => t || descriptionFromApi())
+        .then((t) => { if (!t) delete descCache[s]; return t || null; });
+      return descCache[s];
+    },
+  };
 
   let startAfterReady = false;
   function start() {
@@ -220,6 +248,7 @@
   function onPageEvent(m) {
     if (m.type !== 'action') return;
     if (m.name === 'start') return start();
+    if (m.name === 'check') return markRun().then(() => action('check'));
     if (m.name === 'dropSub') {
       store.set('subs:' + slug(), subs().filter((x) => 's:' + x.id !== m.extra.key));
       return pushSubs();

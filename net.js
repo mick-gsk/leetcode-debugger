@@ -1,14 +1,16 @@
 /* Läuft in der Hauptwelt ab Seitenbeginn: hört bei LeetCodes eigenen Anfragen mit, wenn eine
  * Einsendung („Submit“) zurückkommt, und merkt sich den Testfall, an dem sie gescheitert ist.
  * Liest nur Antworten, ändert nichts und schickt nichts weiter. Ablage: localStorage der Seite,
- * Schlüssel lcdbg:subs:<aufgabe>, höchstens 3 Fälle, neueste zuerst. */
+ * Schlüssel lcdbg:subs:<aufgabe>, höchstens 3 Fälle, neueste zuerst.
+ * Für den Lern-Coach meldet es außerdem jeden „Run“/„Submit“ (lcdbg-attempt), dessen Ergebnis
+ * (lcdbg-result) und bestandene Einsendungen (lcdbg-accepted) als Ereignisse auf window. */
 (() => {
   'use strict';
   if (window.__lcdbgNet) return;
   window.__lcdbgNet = true;
 
   const MAX = 3;
-  const WATCH = /\/submissions\/detail\/[^/]+\/check\/?|\/graphql\/?|\/problems\/[^/]+\/submit\/?/;
+  const WATCH = /\/submissions\/detail\/[^/]+\/check\/?|\/graphql\/?|\/problems\/[^/]+\/(submit|interpret_solution)\/?/;
   const slugNow = () => (location.pathname.match(/^\/problems\/([^/]+)/) || [])[1] || '';
   const lastCode = {};   // zuletzt eingesendeter Code pro Aufgabe (aus der Submit-Anfrage)
 
@@ -26,10 +28,16 @@
     window.dispatchEvent(new CustomEvent('lcdbg-submission', { detail: { slug } }));
   }
 
+  const emit = (name, detail) => window.dispatchEvent(new CustomEvent(name, { detail }));
+
   // REST: /submissions/detail/<id>/check/ – fertig, wenn state = SUCCESS
   function fromCheck(j, url) {
     if (!j || j.state !== 'SUCCESS') return;
     const id = String(j.submission_id || (url.match(/detail\/([^/]+)\//) || [])[1] || '');
+    const run = /^runcode_/.test(id) || /\/runcode_/.test(url), slug = slugNow();
+    emit('lcdbg-result', { slug, src: run ? 'run' : 'submit', status: j.status_msg || null,
+      correct: run ? (typeof j.correct_answer === 'boolean' ? j.correct_answer : null) : j.status_msg === 'Accepted' });
+    if (!run && j.status_msg === 'Accepted') emit('lcdbg-accepted', { slug });
     if (/^runcode_/.test(id) || j.status_code === 10 || j.status_msg === 'Accepted') return;   // „Run“ bzw. bestanden
     const input = j.last_testcase != null && j.last_testcase !== '' ? j.last_testcase : j.input;
     if (input == null || input === '') return;   // z. B. Kompilierfehler: kein Testfall
@@ -62,10 +70,16 @@
     } catch (e) { /* keine JSON-Antwort */ }
   }
 
+  // „Submit“ bzw. „Run“ (interpret_solution): Code merken und als Versuch melden
   function noteSubmit(url, body) {
-    const m = url.match(/\/problems\/([^/]+)\/submit\/?/);
+    const m = url.match(/\/problems\/([^/]+)\/(submit|interpret_solution)\/?/);
     if (!m || typeof body !== 'string') return;
-    try { const j = JSON.parse(body); if (j && typeof j.typed_code === 'string') lastCode[m[1]] = j.typed_code; } catch (e) { /* egal */ }
+    try {
+      const j = JSON.parse(body);
+      if (!j || typeof j.typed_code !== 'string') return;
+      if (m[2] === 'submit') lastCode[m[1]] = j.typed_code;
+      emit('lcdbg-attempt', { slug: m[1], src: m[2] === 'submit' ? 'submit' : 'run', code: j.typed_code });
+    } catch (e) { /* egal */ }
   }
 
   const urlOf = (input) => (typeof input === 'string' ? input : (input && input.url) || String(input));
@@ -77,7 +91,7 @@
       try {
         const url = urlOf(input);
         if (WATCH.test(url)) {
-          if (/\/submit\/?/.test(url)) noteSubmit(url, init && init.body);
+          if (/\/(submit|interpret_solution)\/?/.test(url)) noteSubmit(url, init && init.body);
           p.then((r) => r.clone().text()).then((t) => inspect(url, t)).catch(() => {});
         }
       } catch (e) { /* nie die Seite stören */ }
@@ -96,7 +110,7 @@
       const url = this.__lcdbgUrl || '';
       try {
         if (WATCH.test(url)) {
-          if (/\/submit\/?/.test(url)) noteSubmit(url, body);
+          if (/\/(submit|interpret_solution)\/?/.test(url)) noteSubmit(url, body);
           this.addEventListener('load', () => {
             try {
               const t = this.responseType === '' || this.responseType === 'text' ? this.responseText

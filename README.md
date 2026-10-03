@@ -1,6 +1,7 @@
 # LeetCode-Debugger
 
-Chrome-Extension, die einen Debugger **wie in VS Code direkt in den LeetCode-Editor** einbaut. Oben
+Chrome-Extension, die einen Debugger **wie in VS Code direkt in den LeetCode-Editor** einbaut – und
+seit 3.0 einen **Lern-Coach** (Autocompleter, der aufs Lernen optimiert ist, siehe unten). Oben
 rechts im Editor sitzt ein Knopf **🐞 Debuggen**. Nach dem Klick erscheint dort die von VS Code
 bekannte kompakte Debug-Leiste. Der Editor bekommt oben etwas Abstand, damit sie keinen Code
 verdeckt.
@@ -55,7 +56,7 @@ Platte, fest angemeldete Content-Scripts dagegen erst nach „Aktualisieren“).
 
 | Was hat sich geändert? | Was tun? |
 |---|---|
-| Debugger-Code (`ui.js`, `page.js`, `host.js`, `net.js`, `engine.js`, `tracer.js`, `update.json`) | **LeetCode-Seite neu laden (F5)** |
+| Debugger-/Coach-Code (`ui.js`, `page.js`, `host.js`, `net.js`, `engine.js`, `tracer.js`, `coach*.js`, `update.json`) | **LeetCode-Seite neu laden (F5)** |
 | Rahmen (`manifest.json`, `background.js`, `content.js`, `popup.*`) | in `chrome://extensions` beim Debugger auf **↻ Aktualisieren**, dann F5 |
 
 Der Ordner gewinnt immer, außer GitHub hat eine strikt höhere Version.
@@ -139,6 +140,62 @@ springen und mit ↶ rückwärts gehen. Der **erste** Wert, der nicht stimmt, ze
 - **Ausgaben:** `console.log` erscheint im Reiter *Ausgabe*. Ein Klick springt zu der Stelle, an der
   die Ausgabe passiert ist.
 
+## Lern-Coach (ab 3.0)
+
+Ein Autocompleter, der auf **Lernen** optimiert ist, nicht auf Tippgeschwindigkeit. Er nimmt dir
+Syntax ab, gibt aber keine Lösungslogik heraus. Wenn du feststeckst, bekommst du gestufte Hinweise,
+die erst ein eigener Versuch freischaltet. Begründung und Design: `docs/2026-10-03-lerncoach-design.md`.
+
+**Einmal einrichten:**
+
+1. In `chrome://extensions` beim Debugger auf **↻ Aktualisieren** klicken. Das ist nötig, weil die
+   neue Berechtigung `openrouter.ai` dazukommt.
+2. Einen OpenRouter-Schlüssel anlegen ([openrouter.ai/settings/keys](https://openrouter.ai/settings/keys)),
+   am besten mit Ausgabenlimit.
+3. Käfer-Symbol → **Lern-Coach** → Schlüssel eintragen → **Speichern**.
+
+Ohne Schlüssel laufen nur die API-Karten.
+
+| Baustein | Was passiert | Taste |
+|---|---|---|
+| **Ghost-Text** | Nach 1,5 s Tipp-Pause ein grauer Vorschlag: höchstens eine Zeile und nur Syntax (Klammern schließen, Signaturen, `= {}`). Ein Wächter verwirft alles mit `if`/Schleife/Operator/Methodenaufruf/neuem Namen, bevor du es siehst. | `Tab` übernimmt, `Alt+Shift+Leertaste` fragt sofort |
+| **API-Karten** | Nach `.red` erscheint eine Karte mit Signatur, Rückgabe, „verändert Original?“ und der typischen Falle. Gleiche Karte beim Überfahren eines API-Namens. Den Namen tippst du selbst. | `Esc` schließt |
+| **LeetCode-Vorschläge** | sind aus, bis die Aufgabe *Accepted* ist (im Käfer-Fenster abschaltbar) | – |
+| **💡 Hinweis** (unten rechts) | Stufe 1 Leitfrage → 2 Konzept → 3 Pseudocode → 4 nächste Zeile | `Alt+Shift+H` |
+| **🎓 Review** | Nach *Accepted*: ein Satz Selbsterklärung (Warum korrekt? Laufzeit?), dann Alternativlösung, Komplexität, unidiomatische Stellen oder eine eigene Frage | – |
+
+**Freischaltung durch Versuch, nie durch Zeit:**
+
+- **Stufe 1** öffnet nach einem eigenen Versuch:
+  - 🐞-Prüfung, LeetCode *Run* oder *Submit*
+  - oder ein Satz „Mein Plan: …“ mit mindestens 6 Wörtern
+- **Jede weitere Stufe** braucht einen weiteren Versuch mit **geändertem** Code.
+- **Ab Stufe 3** schreibst du zuerst, was die nächste Zeile tun soll. Der Coach bewertet diese Absicht
+  und zeigt erst dann die Zeile, als Text zum Selbsttippen, nicht kopierbar.
+- **„Ich komme nicht weiter“** öffnet die nächste Stufe sofort. Die Aufgabe gilt dann als „mit Hilfe“
+  gelöst, genau wie beim Erreichen von Stufe 4.
+- **Kurze Rückmeldung**, wenn du schneller weiterklickst, als man den Hinweis lesen kann.
+
+**Warum so** (Recherche 03.10.2026):
+
+| Befund | Stärke | Folge |
+|---|---|---|
+| KI-Hilfe, die Lösungen liefert, senkt den Lernerfolg; Erklärungen nicht. [Shen & Tamkin 2026](https://www.anthropic.com/research/AI-assistance-coding-skills) (Quiz 50 % gegen 67 %), [Bastani et al., PNAS 2025](https://www.pnas.org/doi/10.1073/pnas.2422633122) (Prüfung −17 % ohne Guardrails) | einzelne große RCTs | Ghost-Text nur Syntax |
+| Bei leichtem Zugang wird Lösungs-Generieren gewählt ([Lehmann et al.](https://arxiv.org/abs/2409.09047)) | quasi-experimentell | kein Tab für Logik, enthüllte Zeile nicht kopierbar, kein Komfort-Modus vor *Accepted* |
+| Abtippen von KI-Code: nur Frust; erst Absicht nennen, dann Zeile sehen: bester Transfer ([Kazemitabaar et al., IUI 2025](https://arxiv.org/abs/2410.08922)) | Einzelstudie | Stufe 4 = Lead-and-Reveal |
+| Hinweis vor eigenem Versuch und Durchklicken sagen schlechtere Ergebnisse voraus ([An et al., LAK 2026](https://dev.stamper.org/publications/An_LAK_2026.pdf)); Rückmeldung zum Hilfeverhalten wirkt ([Roll et al. 2011](https://eric.ed.gov/?id=EJ908875)) | korrelativ, repliziert / Einzelstudie | Freischaltung durch Versuch, Schnell-Klick-Hinweis |
+| Inline-Vorschläge unterbrechen Anfänger beim Denken ([Prather et al. 2024](https://arxiv.org/abs/2405.17739)) | qualitativ | Ghost-Text erst nach Pause |
+| Selbst erzeugen (d≈0,4), Selbsterklärung (g≈0,55) | robust repliziert | Namen selbst tippen, Selbsterklärung nach *Accepted* |
+| Zeitsperren laden zum Umgehen oder Abbrechen ein, und ein Abbruch ist schlechter als ein verratener Schritt | Designannahme | keine Zeitsperren, Notausgang statt harter Sperre |
+
+Das Werkzeug fühlt sich absichtlich schlechter an als Copilot. Bei Bastani lag die Übungsleistung bei
++127 %, der Prüfungsgewinn bei null.
+
+**Rohdaten:** Jedes Ereignis (Versuch, Hinweisstufe, Notausgang, Schnell-Klick, Accepted, Ghost-Text
+gezeigt/übernommen/verworfen) landet im Log, höchstens 5.000 Zeilen. Export: Käfer-Fenster →
+**Log exportieren (JSON)**. Teil 2 wertet das aus: Wiedervorlage, Verblassen der Hilfe pro Konzept,
+Statistik.
+
 ## Grenzen (ehrlich)
 
 - **Nur JavaScript.**
@@ -151,12 +208,29 @@ springen und mit ↶ rückwärts gehen. Der **erste** Wert, der nicht stimmt, ze
   (LeetCodes Antwortformat ist nicht dokumentiert und nicht live gesehen; als Rückfall wird das
   sichtbare Ergebnisfeld gelesen) und das Selbst-Update gegen einen Nachbau der GitHub-API.
   Kommt der Code nicht aus dem Editor (`window.monaco` fehlt), erscheint ein Feld zum Einfügen.
+- **Lern-Coach nur gegen Nachbauten getestet:**
+  - echtes Monaco 0.57 und 0.34, OpenRouter- und LeetCode-Nachbau
+  - Ob LeetCodes Monaco Inline-Vorschläge kann, ist live ungeprüft. Falls nicht, zeichnet der Coach
+    den Ghost-Text selbst (getesteter Rückfall).
+  - LeetCodes Antwortformat bei *Run*/*Accepted* ist nicht dokumentiert.
+- **Der Wächter ist streng und regelbasiert.** Er verwirft lieber einen harmlosen Vorschlag zu viel.
 
 ## Sicherheit / Datenschutz
 
-- **Berechtigungen:** läuft nur auf `leetcode.com` und `leetcode.cn`. Dazu `api.github.com` (Updates
-  holen), `storage` (Token, Einstellungen, geladener Stand), `scripting` und `userScripts` (den
-  Debugger-Code in die LeetCode-Seite einhängen).
+- **Berechtigungen:**
+  - läuft nur auf `leetcode.com` und `leetcode.cn`
+  - `api.github.com`: Updates holen
+  - `openrouter.ai`: Lern-Coach
+  - `storage`: Token, Schlüssel, Einstellungen, Log, geladener Stand
+  - `scripting` und `userScripts`: den Debugger-Code in die LeetCode-Seite einhängen
+- **Lern-Coach / OpenRouter:**
+  - **Was an OpenRouter geht:** dein Code, der Aufgabentext und die bisherigen Hinweise. Bei den
+    gewählten Modellen gelten die Datenregeln von OpenRouter und des jeweiligen Anbieters.
+  - **Der Schlüssel** liegt nur im Speicher der Extension; die Seite bekommt nur die Antworttexte.
+  - **Ehrliche Grenze:** Jedes Skript auf leetcode.com kann über dieselbe Brücke Aufrufe auslösen.
+    Das kostet Geld, verrät aber den Schlüssel nicht. Gedeckelt ist es dreifach: Form und Größe der
+    Anfragen sind begrenzt, Hinweise auf 20 Aufrufe pro Minute und ein Tageslimit (Standard 300),
+    Ghost-Text auf 15 pro Minute und 600 pro Tag. Zusätzlich lohnt ein Ausgabenlimit am Schlüssel selbst.
 - **GitHub-Update heißt:** Mit „Nutzerskripts zulassen“ führt die Extension aus, was im Zweig
   `main` von `mick-gsk/leetcode-debugger` liegt (nur Debugger-Code, nur auf LeetCode-Seiten). Wer
   dem nicht traut, lässt den Schalter aus: Dann läuft ausschließlich der Code im eigenen Ordner. Ein
@@ -181,8 +255,8 @@ Version, aus GitHub).
 | Datei | Teil | Rolle |
 |---|---|---|
 | `manifest.json` | Rahmen | Manifest V3, `engine.html` als Sandbox-Seite |
-| `background.js` | Rahmen | Spielt den Debugger-Code bei jedem Seitenaufruf frisch aus dem Ordner ein (`chrome.scripting.executeScript`); optional: prüft GitHub auf höhere Versionen (bedingte Anfragen, 304 kostet kein Limit) und meldet sie per `chrome.userScripts` an |
-| `content.js` | Rahmen | Sagt dem Debugger, wo die Extension liegt, meldet Seitenaufrufe, reicht Anfragen des Fensters weiter, zeigt den Update-Hinweis |
+| `background.js` | Rahmen | Lern-Coach: OpenRouter-Aufrufe mit Schlüssel, Minuten- und Tageslimit, Log. Spielt den Debugger-Code bei jedem Seitenaufruf frisch aus dem Ordner ein (`chrome.scripting.executeScript`); optional: prüft GitHub auf höhere Versionen (bedingte Anfragen, 304 kostet kein Limit) und meldet sie per `chrome.userScripts` an |
+| `content.js` | Rahmen | Brücke Lern-Coach ↔ Hintergrund. Sagt dem Debugger, wo die Extension liegt, meldet Seitenaufrufe, reicht Anfragen des Fensters weiter, zeigt den Update-Hinweis |
 | `engine.html`, `boot.js` | Rahmen | Sandbox: startet die Engine aus dem GitHub-Stand, sonst aus dem Ordner |
 | `popup.html/.js` | Rahmen | Fenster am Käfer-Symbol: Debugger starten, Zustand prüfen, Aktualisierung, Quelle + Token |
 | `update.json` | – | Welche Dateien zum Debugger-Code gehören, in welcher Reihenfolge; `shell` = nötige Rahmen-Version |
@@ -193,6 +267,9 @@ Version, aus GitHub).
 | `engine.js` | Code | Zustand, Testfälle, Läufe, Schritte; schickt ein fertiges Ansichtsmodell |
 | `tracer.js` | Code | Kern: instrumentiert den Code mit Acorn, führt ihn aus, formatiert Werte, liest Beispiele und Ergebnisfelder, rät den Testaufruf, vergleicht |
 | `vendor/acorn.js` | Code | JavaScript-Parser (MIT, Version 8.18.0) |
+| `coach-core.js` | Code | Lern-Coach, reine Logik: Wächter, Hinweis-Leiter (Freischaltung), Prompts, Parser |
+| `coach-api.js` | Code | Lern-Coach: Daten der API-Karten (92 Builtins) |
+| `coach.js` | Code | Lern-Coach im Editor: Ghost-Text (Inline-Vorschlag oder Dekoration), Karten, Hinweis-Panel, Review; Brücke über `content.js` zum Hintergrund |
 
 Die Instrumentierung fügt nur Text ohne Zeilenumbrüche ein, deshalb bleiben die Zeilennummern
 identisch mit dem Editor.
@@ -206,5 +283,10 @@ Rahmen und neuer Code nicht mehr zusammenpassen, `shell` in `update.json` und `S
 
 ```bash
 node test/tracer.test.js                              # Kern: 28 Fälle
+node test/coach.test.js                               # Lern-Coach-Kern: 29 Fälle
 NODE_PATH=$(npm root -g) node test/e2e.js [bild.png]  # Extension in Chromium gegen LeetCode- und GitHub-Nachbau: 29 Abläufe
+NODE_PATH=$(npm root -g) node test/coach-e2e.js [bild.png]   # Lern-Coach gegen echtes Monaco + OpenRouter-Nachbau: 35 Abläufe
+MONACO=monaco-034 NODE_PATH=$(npm root -g) node test/coach-e2e.js   # dasselbe mit Monaco 0.34
 ```
+
+Für `coach-e2e.js` einmal: `npm i -g monaco-editor@0.57.0 monaco-034@npm:monaco-editor@0.34.1`.
