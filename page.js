@@ -69,9 +69,21 @@
   }
   setInterval(mark, 1000);
 
+  function revealLine(line) {
+    const e = ed || findEditor();
+    if (!e || !line) return;
+    try {
+      e.revealLineInCenter(line);
+      e.setSelection({ startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: e.getModel().getLineMaxColumn(line) });
+      e.focus();
+    } catch (err) { /* ältere Monaco-Versionen */ }
+  }
+
   const onProblem = () => /^\/problems\/[^/]+/.test(location.pathname);
   const send = (name, extra) => {
     if (name === 'continue') extra = Object.assign({}, extra, { lines: [...bps] });
+    // Zeile aus einem Hinweis zeigen: rein im Editor, die Engine braucht davon nichts zu wissen
+    if (name === 'reveal') return revealLine(extra.line);
     post({ type: 'action', name, extra });
   };
   let lastView = null, lastHint = null;
@@ -323,14 +335,9 @@
         t.style.cssText = 'color:#f48771;font-weight:600;overflow:hidden;text-overflow:ellipsis';
         t.textContent = '💥 ' + ex.title;
         node.appendChild(t);
-        if (ex.hint) {
-          const h = document.createElement('div');
-          h.style.cssText = 'opacity:.85;overflow:hidden;text-overflow:ellipsis';
-          h.textContent = '💡 ' + ex.hint;
-          node.title = ex.hint;
-          node.appendChild(h);
-        }
-        zoneId = acc.addZone({ afterLineNumber: ex.line, heightInPx: ex.hint ? 48 : 28, domNode: node });
+        // Der Tipp steht in der Fehlerkarte der Leiste – hier nur als Tooltip, nicht ein zweites Mal
+        if (ex.hint) node.title = ex.hint;
+        zoneId = acc.addZone({ afterLineNumber: ex.line, heightInPx: 28, domNode: node });
         zoneEd = e;
       });
     } catch (err) { /* ohne Zonen-API: Fehler steht trotzdem in der Leiste */ }

@@ -247,7 +247,7 @@ t('Gefangener Fehler wird mit Zeile erfasst, Auffälligkeiten ohne Ausführen', 
   assert.strictEqual(r2.thrown.name, 'ReferenceError');
   assert.strictEqual(r2.thrown.line, 4);
   assert.strictEqual(r2.steps[r2.thrown.step].kind, 'error');
-  assert.match(T.hint(r2.thrown, bad), /nur eine Methode deines Objekts \(Zeile 3\)/);
+  assert.match(T.hint(r2.thrown, bad), /eine Methode deines Objekts \(Zeile 3\)/);
   const kinds = T.lint(sol).map((f) => f.kind);
   assert.deepStrictEqual(kinds, ['dupe', 'shadow', 'throw']);
   assert.match(T.lint(sol)[1].message, /\(Ebenso Zeile 7\.\)/);

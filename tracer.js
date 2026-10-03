@@ -252,6 +252,14 @@
     return s.length > 70 ? s.slice(0, 67) + '…' : s;
   }
 
+  // in Objekten/Arrays nur die Signatur: {toBe: ƒ toBe(val)} statt des halben Quelltexts
+  function fnSig(f) {
+    const s = fnText(f);
+    if (s.charAt(0) === 'ƒ') return s;
+    const m = s.match(/^(?:async\s+)?(?:function\s*\*?\s*)?([\w$]*)\s*\(([^)]*)\)/) || s.match(/^(?:async\s+)?()([\w$]+)\s*=>/);
+    return m ? `ƒ ${m[1] || f.name || ''}(${m[2].replace(/\s+/g, ' ').trim()})` : 'ƒ ' + (f.name || '');
+  }
+
   const isListNode = (v) => v && typeof v === 'object' && 'val' in v && 'next' in v && !('left' in v);
   const isTreeNode = (v) => v && typeof v === 'object' && 'val' in v && 'left' in v && 'right' in v;
 
@@ -284,7 +292,7 @@
     if (t === 'string') return JSON.stringify(v);
     if (t === 'boolean') return String(v);
     if (t === 'symbol') return v.toString();
-    if (t === 'function') return fnText(v);
+    if (t === 'function') return depth ? fnSig(v) : fnText(v);
     if (seen.has(v)) return '[zirkulär]';
     if (depth > 3) return Array.isArray(v) ? '[…]' : '{…}';
     seen.add(v);
@@ -909,7 +917,7 @@
         // get + set mit gleichem Namen gehören zusammen
         if (prev && !(prev.kind !== it.kind && /^(get|set)$/.test(prev.kind) && /^(get|set)$/.test(it.kind)))
           out.push({ line: it.line, kind: 'dupe', name: it.name,
-            message: `„${it.name}“ ist in diesem ${what} zweimal definiert (Zeile ${prev.line} und ${it.line}). Die zweite Definition ersetzt die erste – die aus Zeile ${prev.line} läuft nie.` });
+            message: `„${it.name}“ steht zweimal im ${what} (Zeile ${prev.line} und ${it.line}). Nur die zweite gilt – die aus Zeile ${prev.line} läuft nie.` });
         else seen.set(it.name, it);
       }
     }
@@ -924,7 +932,7 @@
       if (n.type === 'ThrowStatement' && n.argument && (n.argument.type === 'Literal' || n.argument.type === 'TemplateLiteral')) {
         const t = code.slice(n.argument.start, n.argument.end);
         out.push({ line: n.loc.start.line, kind: 'throw',
-          message: `throw ${t} wirft einen bloßen Wert, kein Error-Objekt. Wer den Fehler fängt und e.message liest – so wie LeetCodes Prüf-Code –, bekommt undefined. Schreib throw new Error(${t}).` });
+          message: `throw ${t} wirft nur einen Wert, kein Error. LeetCode liest e.message und bekommt undefined – schreib throw new Error(${t}).` });
       }
       if (fnTypes.includes(n.type)) {
         const own = new Map();
@@ -933,7 +941,7 @@
           for (let i = scopes.length - 1; i >= 0; i--) {
             if (!scopes[i].has(id.name)) continue;
             out.push({ line: id.loc.start.line, kind: 'shadow', name: id.name,
-              message: `Der Parameter „${id.name}“ (Zeile ${id.loc.start.line}) verdeckt „${id.name}“ aus Zeile ${scopes[i].get(id.name)}. In dieser Funktion meint „${id.name}“ nur noch den eigenen Parameter – an den äußeren Wert kommst du hier nicht mehr heran. Gib einem der beiden einen anderen Namen.` });
+              message: `Parameter „${id.name}“ verdeckt „${id.name}“ aus Zeile ${scopes[i].get(id.name)} – hier drin kommst du an den äußeren Wert nicht mehr heran. Einen der beiden umbenennen.` });
             break;
           }
         }
@@ -990,7 +998,7 @@
       const mm = new RegExp('^[ \\t]*(?:async\\s+)?' + x[1] + '\\s*(?:\\([^)]*\\)\\s*\\{|:\\s*(?:async\\s+)?(?:function|\\())', 'm').exec(code);
       if (mm) {
         const line = code.slice(0, mm.index).split('\n').length;
-        return `„${x[1]}“ ist nur eine Methode deines Objekts (Zeile ${line}), keine eigene Variable. Ein Aufruf ${x[1]}(…) ohne Objekt davor findet sie nicht. Wolltest du einen Wert vergleichen, nimm die Variable direkt (z. B. den Parameter) statt die Methode aufzurufen.`;
+        return `„${x[1]}“ ist eine Methode deines Objekts (Zeile ${line}), keine Variable – ${x[1]}(…) ohne Objekt davor findet sie nicht. Zum Vergleichen nimm den Wert direkt, z. B. den Parameter.`;
       }
     }
     if ((x = m.match(/(\S+) is not defined/))) return `${x[1]} gibt es an dieser Stelle nicht: Tippfehler, nicht deklariert, oder in einem anderen Scope deklariert.`;

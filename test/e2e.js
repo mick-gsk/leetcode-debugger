@@ -183,6 +183,8 @@ const makePage = (title, desc, code) => `<!doctype html><html class="dark"><head
     getModel: () => model, getValue: () => window.__code, getDomNode: () => node,
     deltaDecorations: (old, list) => { window.__decos = list; render(); return list.map((_, i) => 'd' + i); },
     revealLineInCenterIfOutsideViewport: () => {},
+    revealLineInCenter: (l) => { window.__revealed = l; },
+    setSelection: () => {}, focus: () => {},
     getRawOptions: () => JSON.parse(JSON.stringify(window.__opts)),
     updateOptions: (o) => { Object.assign(window.__opts, o); render(); },
     onMouseDown: (cb) => { mouseCb = cb; return { dispose() {} }; },
@@ -356,7 +358,8 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
   await step('Falscher Code: Neustart zeigt erwartet vs. bekommen', async () => {
     await setCode(SOLUTION.replace('reduceRight', 'reduce'));
     await page.locator('[data-act="check"]').click();
-    await waitText('.r2', /erwartet 65 · bekommen 50/);
+    await waitText('.r2', /Falsches Ergebnis/);
+    assert.match(await text('.cmp'), /erwartet\s*65\s*bekommen\s*50/);
     assert.match(await text('.case'), /✗\s*Beispiel 1/);
   });
 
@@ -364,12 +367,13 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     await setCode(SOLUTION.replace('fn(acc)', 'fn(acc).value.x'));
     await page.locator('[data-act="menu"]').click();
     await page.locator('.item', { hasText: 'Beispiel 1' }).click();
-    await waitText('.r2', /Fehler \(TypeError\) in Zeile 8/);
+    await waitText('.r2', /TypeError\s*Zeile 8/);
     await page.waitForTimeout(100);
     const zone = await page.evaluate(() => window.__zones.map((z) => [z.afterLineNumber, z.domNode.textContent]));
     assert.strictEqual(zone.length, 1);
     assert.strictEqual(zone[0][0], 8);
-    assert.match(zone[0][1], /TypeError[\s\S]*💡/);
+    assert.match(zone[0][1], /TypeError/);
+    assert.doesNotMatch(zone[0][1], /💡/, 'Tipp nur in der Leiste, nicht doppelt');
     assert.strictEqual((await decos()).find((d) => d.cls).cls, 'lcdbg-line-err');
   });
 
@@ -483,13 +487,22 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     await page.goto('https://leetcode.com/problems/to-be-or-not-to-be/');
     await page.locator('.lcdbg-overlay .pill').waitFor({ timeout: 5000 });
     await page.locator('.pill').click();
-    await waitText('.r2', /Beispiel 1: dein Code wirft ReferenceError in Zeile 15/);
-    const extra = (await page.locator('.r2x').allInnerTexts()).join(' | ');
+    await waitText('.r2', /ReferenceError\s*Zeile 15/);
+    const extra = await text('.card');
     assert.match(extra, /toBe is not defined/);
-    assert.match(extra, /nur eine Methode deines Objekts \(Zeile 7\)/);
-    assert.match(extra, /Zeile 14: „toBe“ ist in diesem Objekt zweimal definiert/);
+    assert.match(extra, /eine Methode deines Objekts \(Zeile 7\)/);
+    assert.match(extra, /Z\. 14\s*„toBe“ steht zweimal im Objekt/);
     assert.match(extra, /verdeckt „val“ aus Zeile 5/);
     assert.match(extra, /throw new Error\("Not Equal"\)/);
+    assert.doesNotMatch(extra, /bekommen/, 'kein doppeltes {error: …}');
+    if (SHOT) await page.screenshot({ path: SHOT.replace(/\.png$/, '-fehler.png') });
+    // Zeilenknopf springt in den Code, Einklappen lässt nur die Überschrift stehen
+    await page.locator('button.ln', { hasText: 'Zeile 15' }).click();
+    assert.strictEqual(await page.evaluate(() => window.__revealed), 15);
+    await page.locator('[data-act="fold"]').click();
+    assert.strictEqual(await page.locator('.card .msg').count(), 0);
+    await page.locator('[data-act="fold"]').click();
+    assert.strictEqual(await page.locator('.card .msg').count(), 1);
     await page.waitForTimeout(100);
     const zone = await page.evaluate(() => window.__zones.map((z) => [z.afterLineNumber, z.domNode.textContent]));
     assert.deepStrictEqual(zone.map((z) => z[0]), [15], 'Fehlerkasten an der Stelle des Wurfs');
@@ -514,7 +527,8 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
 
   await step('Debuggen springt direkt zum gescheiterten Fall, Beispiele stimmen trotzdem', async () => {
     await page.locator('.pill').click();
-    await waitText('.r2', /Einsendung: falsches Ergebnis · erwartet true · bekommen false/);
+    await waitText('.r2', /Falsches Ergebnis/);
+    assert.match(await text('.cmp'), /erwartet\s*true\s*bekommen\s*false/);
     assert.match(await text('.case'), /✗\s*Einsendung/);
     await page.locator('[data-act="menu"]').click();
     const items = (await page.locator('.item').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
@@ -552,7 +566,8 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
       document.querySelector('[data-track-load]').prepend(d);
     });
     await page.locator('[data-act="check"]').click();
-    await waitText('.r2', /Einsendung: falsches Ergebnis · erwartet true · bekommen false/);
+    await waitText('.r2', /Falsches Ergebnis/);
+    assert.match(await text('.cmp'), /erwartet\s*true\s*bekommen\s*false/);
     await page.locator('[data-act="close"]').click();
   });
 
@@ -639,7 +654,7 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     const p = await popup();
     await p.locator('#check').click();
     await p.waitForFunction(() => /Update auf v9\.0\.0 geladen/.test(document.querySelector('#upd').innerText), null, { timeout: 8000 });
-    assert.match(await p.locator('#checks').innerText(), /Debugger 2.3.2 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
+    assert.match(await p.locator('#checks').innerText(), /Debugger 2.4.0 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
     if (SHOT) { await p.setViewportSize({ width: 340, height: 420 }); await p.screenshot({ path: SHOT.replace(/\.png$/, '-update.png') }); }
     assert.match(await p.locator('#v').innerText(), /v9\.0\.0/);
     assert.ok(gh.auth.includes('Bearer geheim'), 'Token geht als Authorization mit');

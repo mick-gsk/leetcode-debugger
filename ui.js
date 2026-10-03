@@ -31,7 +31,7 @@
     const send = opts.send;
     const container = opts.container;
     const root = container.attachShadow({ mode: 'open' });
-    let V = null, menu = false, panel = false, tab = 'vars', lastSel = null;
+    let V = null, menu = false, panel = false, tab = 'vars', lastSel = null, fold = false;
 
     root.innerHTML = `<style>${CSS}</style><div class="anchor ${opts.mode}">` +
       '<button class="pill" data-act="start" title="Debugger starten: alle Beispiele prüfen, dann Schritt für Schritt (Alt+Shift+D)">🐞 Debuggen</button>' +
@@ -65,23 +65,15 @@
       h.push(btn('panel', 'vars', 'Variablen, Aufrufstapel, Ausgabe, Testaufruf', { cls: panel ? 'on' : '' }));
       h.push('</div>');
 
-      // Zeile 2: Ergebnis
+      // Zeile 2: Ergebnis. Bei Fehlschlag eine Karte: Überschrift → Meldung → Vergleich → Tipp → Auffälligkeiten
       const vd = V.verdict;
-      let line2 = '', cls2 = '';
-      if (V.running) { line2 = 'Prüfe …'; cls2 = 'muted'; }
-      else if (V.warn) { line2 = V.warn; cls2 = 'bad'; }
+      if (V.running) h.push('<div class="r2 muted">Prüfe …</div>');
+      else if (V.warn) h.push(`<div class="r2 bad">${esc(V.warn)}</div>`);
+      else if (vd && vd.cls === 'bad') h.push(card(vd));
       else if (vd) {
-        cls2 = vd.cls;
-        line2 = vd.title.replace(/^(✅|❌|💥|⏱|⚠)\s*/u, '');
-        if (vd.rows && (vd.cls === 'bad' || !/stimm/.test(vd.title))) line2 += ' · ' + vd.rows.map(([k, v]) => `${k} ${v}`).join(' · ');
-      }
-      const tip = line2 + (vd && vd.lead ? '\n\n' + vd.lead : '') + (vd && vd.hint ? '\n\n' + vd.hint : '');
-      if (line2) h.push(`<div class="r2 ${cls2}" title="${esc(tip)}">${esc(line2)}</div>`);
-      // Erklärung sichtbar statt nur im Tooltip: Wer scheitert, soll lesen können, was genau falsch ist
-      if (vd && vd.cls === 'bad' && !V.running) {
-        if (vd.detail && vd.detail !== line2) h.push(`<div class="r2x msg">${esc(vd.detail)}</div>`);
-        if (vd.hint) h.push(`<div class="r2x">💡 ${esc(vd.hint)}</div>`);
-        for (const n of vd.notes || []) h.push(`<div class="r2x note">⚠ Zeile ${n.line}: ${esc(n.message)}</div>`);
+        let line2 = vd.title.replace(/^(✅|❌|💥|⏱|⚠)\s*/u, '');
+        if (vd.rows && !/stimm/.test(vd.title)) line2 += ' · ' + vd.rows.map(([k, v]) => `${k} ${v}`).join(' · ');
+        h.push(`<div class="r2 ${vd.cls}" title="${esc(line2 + (vd.hint ? '\n\n' + vd.hint : ''))}">${esc(line2)}</div>`);
       }
 
       // Zeile 3: aktueller Schritt
@@ -90,6 +82,30 @@
         h.push(`<input type="range" id="slider" min="0" max="${step.n - 1}" value="${step.i}" aria-label="Schritt" title="Zu einem beliebigen Schritt springen">`);
       }
       return h.join('');
+    }
+
+    // Zeilennummer als Knopf: springt im Editor hin (im Testaufruf gibt es nichts zu zeigen)
+    const lineBtn = (at, short) => (at.harness
+      ? `<span class="ln">${short ? 'Z.' : 'Zeile'} ${at.line} im Testaufruf</span>`
+      : `<button class="ln" data-act="reveal" data-line="${at.line}" title="Im Code zeigen">${short ? 'Z.' : 'Zeile'} ${at.line}</button>`);
+
+    function card(vd) {
+      const head = vd.head || vd.title.replace(/^(✅|❌|💥|⏱|⚠)\s*/u, '');
+      const notes = vd.notes || [];
+      const h = [`<div class="card"><div class="r2 bad ch"><span class="ht">${esc(head)}</span>`];
+      if (vd.at) h.push(lineBtn(vd.at));
+      h.push(`<button class="fold" data-act="fold" title="${fold ? 'Details zeigen' : 'Details einklappen'}">${fold ? '▾' : '▴'}</button></div>`);
+      if (fold) return h.join('') + '</div>';
+      if (vd.detail && vd.detail !== head) h.push(`<div class="msg">${esc(vd.detail)}</div>`);
+      if (vd.rows && vd.rows.length) h.push('<div class="cmp">' + vd.rows.map(([k, v]) => `<span>${esc(k)}</span><code>${esc(v)}</code>`).join('') + '</div>');
+      if (vd.lead) h.push(`<div class="lead">${esc(vd.lead)}</div>`);
+      if (vd.hint) h.push(`<div class="tip"><span class="ic">💡</span><span>${esc(vd.hint)}</span></div>`);
+      if (notes.length) {
+        h.push('<div class="notes"><div class="nh">Außerdem im Code</div>');
+        for (const n of notes) h.push(`<div class="note">${lineBtn({ line: n.line }, true)}<span>${esc(n.message)}</span></div>`);
+        h.push('</div>');
+      }
+      return h.join('') + '</div>';
     }
 
     function caseMenu() {
@@ -194,6 +210,8 @@
       if (a === 'menu') { menu = !menu; panel = false; return render(); }
       if (a === 'panel') { panel = !panel; menu = false; return render(); }
       if (a === 'tab') { tab = b.dataset.tab; return render(); }
+      if (a === 'fold') { fold = !fold; return render(); }
+      if (a === 'reveal') return send('reveal', { line: +b.dataset.line });
       if (a === 'editHarness') { menu = false; panel = true; tab = 'harness'; return render(); }
       if (a === 'select') { menu = false; return send('select', { key: b.dataset.key }); }
       if (a === 'dropSub') return send('dropSub', { key: b.dataset.key });
@@ -251,13 +269,13 @@
     [hidden] { display: none !important; }
     .anchor {
       --bg: #252526; --bg2: #1e1e1e; --line: #454545; --text: #cccccc; --muted: #9d9d9d; --hover: rgba(90,93,94,.31);
-      --blue: #75beff; --green: #89d185; --red: #f48771; --ok: #89d185; --bad: #f48771; --accent: #ffa116;
+      --blue: #75beff; --green: #89d185; --red: #f48771; --ok: #89d185; --bad: #f48771; --accent: #ffa116; --warn: #cca700;
       --chg: rgba(255,204,0,.14); --mono: Menlo, Consolas, "DejaVu Sans Mono", monospace;
       --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
       font: 12px/1.4 var(--sans); color: var(--text);
     }
     .anchor.light { --bg: #f3f3f3; --bg2: #ffffff; --line: #c8c8c8; --text: #333; --muted: #6f6f6f; --hover: rgba(184,184,184,.35);
-      --blue: #007acc; --green: #388a34; --red: #a1260d; --ok: #388a34; --bad: #a1260d; --chg: rgba(255,204,0,.3); }
+      --blue: #007acc; --green: #388a34; --red: #a1260d; --ok: #388a34; --bad: #a1260d; --warn: #8a6d00; --chg: rgba(255,204,0,.3); }
     button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
     button:disabled { opacity: .35; cursor: default; }
     button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 1px solid var(--blue); outline-offset: 1px; }
@@ -287,9 +305,27 @@
     .ok .st { color: var(--ok); } .bad .st, .err .st { color: var(--bad); }
     .r2 { padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
     .r2.ok { color: var(--ok); } .r2.bad { color: var(--bad); } .r2.muted { color: var(--muted); font-weight: 400; }
-    .r2x { padding: 1px 4px; white-space: normal; line-height: 1.4; font-size: 12px; overflow-wrap: anywhere; }
-    .r2x.msg { color: var(--bad); font-family: var(--mono, Consolas, monospace); }
-    .r2x.note { color: var(--warn, #cca700); }
+    /* Fehlerkarte: oben das Was + Wo, darunter in abnehmender Wichtigkeit */
+    .card { display: flex; flex-direction: column; gap: 5px; max-height: calc(var(--maxh, 360px) * .7); overflow: auto; margin: 3px 0 2px; padding: 5px 7px 6px;
+      border-left: 3px solid var(--bad); background: var(--bg2); border-radius: 0 4px 4px 0; }
+    .ch { display: flex; align-items: center; gap: 8px; padding: 0; }
+    .ht { overflow: hidden; text-overflow: ellipsis; }
+    .ln { font: 500 11px var(--sans); color: var(--muted); white-space: nowrap; padding: 0 5px; border-radius: 3px; background: var(--hover); }
+    button.ln { color: var(--blue); }
+    button.ln:hover { text-decoration: underline; }
+    .fold { margin-left: auto; color: var(--text); width: 22px; height: 20px; border-radius: 3px; font-size: 12px; flex: none; opacity: .7; }
+    .fold:hover { background: var(--hover); opacity: 1; }
+    .msg { font: 12px/1.45 var(--mono); color: var(--text); overflow-wrap: anywhere; }
+    .cmp { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; font-size: 11px; }
+    .cmp span { color: var(--muted); }
+    .cmp code { font: 11px/1.45 var(--mono); overflow-wrap: anywhere; }
+    .lead { color: var(--muted); }
+    .tip { display: flex; gap: 6px; line-height: 1.45; }
+    .tip .ic { flex: none; }
+    .notes { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid var(--line); padding-top: 5px; }
+    .nh { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+    .note { display: flex; gap: 7px; align-items: baseline; line-height: 1.45; }
+    .note .ln { flex: none; color: var(--warn); }
     .r3 { display: flex; gap: 8px; padding: 0 4px; color: var(--muted); white-space: nowrap; overflow: hidden; }
     .pos { color: var(--text); font-variant-numeric: tabular-nums; }
     .et { overflow: hidden; text-overflow: ellipsis; }

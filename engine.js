@@ -289,19 +289,22 @@
     if (!run) return null;
     const label = labelOf(key), lc = (caseOf(key) || {}).ex;
     const lcNote = lc && lc.leetcode ? lc.leetcode : null;
+    // Zeile als eigenes Feld: im Editor anklickbar, im Testaufruf nur zur Info
+    const at = (line) => (line ? { line, harness: line >= run.firstHarnessLine } : null);
     const where = (line) => (line ? (line >= run.firstHarnessLine ? ` im Testaufruf (Zeile ${line})` : ` in Zeile ${line}`) : '');
     if (run.error) {
       const e = run.error;
       const what = e.kind === 'syntax' ? 'Syntaxfehler' : e.kind === 'limit' ? 'abgebrochen' : `Fehler (${e.name})`;
-      return { cls: 'bad', title: `💥 ${label}: ${what}${where(e.line)}`, detail: e.message, hint: T.hint(e, S.code), notes: notes() };
+      return { cls: 'bad', title: `💥 ${label}: ${what}${where(e.line)}`, head: e.kind === 'runtime' || !e.kind ? e.name : what, at: at(e.line),
+        detail: e.message, hint: T.hint(e, S.code), notes: notes() };
     }
-    if (run.timedOut) return { cls: 'bad', title: `⏱ ${label}: nach 4 s abgebrochen`, hint: 'Ein Promise oder Timer wurde nie fertig. Prüf, ob resolve bzw. der Callback überhaupt aufgerufen wird.' };
+    if (run.timedOut) return { cls: 'bad', title: `⏱ ${label}: nach 4 s abgebrochen`, head: 'Nach 4 s abgebrochen', hint: 'Ein Promise oder Timer wurde nie fertig. Prüf, ob resolve bzw. der Callback überhaupt aufgerufen wird.' };
     if (!run.hasResult) return { cls: '', title: `${label}: kein Ergebnis`, hint: 'Die letzte Zeile im Testaufruf ist kein Ausdruck, deshalb gibt es nichts zu vergleichen.' };
     const exp = expectedFor(key);
     const c = T.compare(run.result, exp, cmpOpts());
     // Lokal richtig, bei LeetCode falsch: Code seitdem geändert, oder Zustand bleibt zwischen Testfällen übrig
     if (c === true && lcNote && lcNote.got != null && T.compare(run.result, lcNote.got, cmpOpts()) === false && lcNote.code && lcNote.code.replace(/\s+/g, '') === S.code.replace(/\s+/g, '')) return {
-      cls: 'bad', title: `⚠ ${label}: lokal richtig, bei LeetCode falsch`, rows: [['erwartet', exp], ['LeetCode bekam', short(lcNote.got, 60)]],
+      cls: 'bad', title: `⚠ ${label}: lokal richtig, bei LeetCode falsch`, head: 'Lokal richtig, bei LeetCode falsch', rows: [['erwartet', exp], ['LeetCode bekam', short(lcNote.got, 60)]],
       hint: 'Derselbe Code liefert lokal das richtige Ergebnis. Typische Ursache: Variablen außerhalb der Funktion behalten ihren Wert zwischen den Testfällen von LeetCode.',
     };
     if (c === true) return { cls: 'ok', title: S.allOk ? `✅ ${S.summary}` : `✅ ${label} stimmt`, rows: [['Ergebnis', run.resultText]] };
@@ -309,14 +312,15 @@
     if (c === false && run.thrown) {
       const e = run.thrown;
       return {
-        cls: 'bad', title: `💥 ${label}: dein Code wirft ${e.name}${where(e.line)}`, detail: e.message,
-        rows: [['erwartet', exp], ['bekommen', run.resultText]], hint: T.hint(e, S.code), notes: notes(),
+        cls: 'bad', title: `💥 ${label}: dein Code wirft ${e.name}${where(e.line)}`, head: e.name, at: at(e.line), detail: e.message,
+        // „bekommen“ wäre nur {error: …} – dieselbe Meldung noch einmal
+        rows: [['erwartet', exp]], hint: T.hint(e, S.code), notes: notes(),
       };
     }
     if (c === false) return {
-      cls: 'bad', title: `❌ ${label}: falsches Ergebnis`, rows: [['erwartet', exp], ['bekommen', run.resultText]], notes: notes(),
+      cls: 'bad', title: `❌ ${label}: falsches Ergebnis`, head: 'Falsches Ergebnis', rows: [['erwartet', exp], ['bekommen', run.resultText]], notes: notes(),
       lead: lcNote ? `Diesen Fall hat LeetCode bei der Einsendung gemeldet (${lcNote.status || 'Fehlschlag'}).` : null,
-      hint: 'Spring ans Ende (⏭) und geh mit ◀ rückwärts. Der erste Wert, der nicht deiner Erwartung entspricht, zeigt auf den Fehler.',
+      hint: 'Geh vom Ende mit ↶ rückwärts: Der erste Wert, der nicht deiner Erwartung entspricht, zeigt auf den Fehler.',
     };
     return { cls: '', title: label, rows: [['Ergebnis', run.resultText]].concat(exp ? [['laut Aufgabe', exp]] : []) };
   }
@@ -400,7 +404,7 @@
       const inEditor = s.line && s.line < run.firstHarnessLine;
       v.editor = {
         line: inEditor ? s.line : null, error: s.kind === 'error',
-        text: short(inlineText(s, chg) || (inEditor ? lineValues(s, s.line) : ''), 140),
+        text: short(inlineText(s, chg) || (inEditor ? lineValues(s, s.line) : ''), 80),
         vars: s.vars.map((x) => [x.name, short(x.text, 300)]),
         inline: inlineValues(S.i, inEditor ? s.line : null),
         exception: s.kind === 'error' && inEditor
