@@ -133,4 +133,44 @@
       .then(() => { $('#token').value = ''; });
   });
   $('#clearToken').addEventListener('click', () => busy($('#clearToken'), () => bg('saveCfg', { cfg: { clearToken: true } })));
+
+  // ------------------------------------------------------------ Lern-Coach
+
+  function showCoach(C, note) {
+    const box = $('#coachMsg');
+    if (!C || C.error) { box.className = 'msg bad'; box.textContent = 'Hintergrund antwortet nicht: ' + (C && C.error || '?'); return; }
+    box.className = 'msg ' + (C.hasKey ? 'ok' : 'warn');
+    box.innerHTML = (note ? `<b>${esc(note)}</b> ` : '') + (C.hasKey
+      ? `Bereit. Heute ${C.usedToday} von ${C.dailyLimit} Aufrufen genutzt.`
+      : '<b>Kein Schlüssel.</b> Ohne Schlüssel laufen nur die API-Karten; Ghost-Text und Hinweise brauchen OpenRouter.');
+    $('#orKey').placeholder = C.hasKey ? '•••••• (gespeichert)' : 'sk-or-…';
+    $('#clearKey').hidden = !C.hasKey;
+    $('#ghostModel').value = C.ghostModel;
+    $('#hintModel').value = C.hintModel;
+    $('#dailyLimit').value = C.dailyLimit;
+    $('#nativeSuggest').checked = C.nativeSuggest;
+    $('#logCount').textContent = C.logCount;
+  }
+  showCoach(await bg('coachState'));
+
+  $('#coachForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const key = $('#orKey').value.trim();
+    const C = await bg('saveCoach', { coach: {
+      key, ghostModel: $('#ghostModel').value, hintModel: $('#hintModel').value,
+      dailyLimit: Number($('#dailyLimit').value), nativeSuggest: $('#nativeSuggest').checked,
+    } });
+    $('#orKey').value = '';
+    showCoach(C, key ? 'Schlüssel gespeichert.' : 'Gespeichert.');
+  });
+  $('#clearKey').addEventListener('click', async () => showCoach(await bg('saveCoach', { coach: { clearKey: true } }), 'Schlüssel gelöscht.'));
+  $('#exportLog').addEventListener('click', async () => {
+    const r = await bg('exportLog');
+    const d = new Date(), pad = (n) => String(n).padStart(2, '0');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify((r && r.rows) || [], null, 1)], { type: 'application/json' }));
+    a.download = `lerncoach-log-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
 })();

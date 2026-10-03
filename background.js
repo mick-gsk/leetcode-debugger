@@ -13,7 +13,7 @@
  * neues Paket (z. B. neue Berechtigung) – dann bleibt der alte Stand aktiv und das Fenster sagt es. */
 'use strict';
 
-const SHELL = 2;
+const SHELL = 3;
 const MATCHES = ['https://leetcode.com/*', 'https://leetcode.cn/*'];
 // Öffentliches Repo: Updates ohne Token. dir = Unterordner im Repo, leer = Wurzel
 const DEFAULTS = { repo: 'mick-gsk/leetcode-debugger', branch: 'main', dir: '', token: '', api: 'https://api.github.com' };
@@ -203,11 +203,133 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       await set({ cfg: n, upd: null });
       await ensure();
       await check(true);
-    } else if (m.op === 'openDetails') {
+    } else if (m.op === 'coachState') return coachState();
+    else if (m.op === 'saveCoach') return coachSave(m.coach || {});
+    else if (m.op === 'exportLog') return { rows: (await get('coachLog')) || [] };
+    else if (m.op === 'openDetails') {
       await chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id });
     } else await ensure();
     return state();
   })().then(reply, (e) => reply({ error: String(e && e.message || e) }));
+  return true;
+});
+
+// ------------------------------------------------------------ Lern-Coach: OpenRouter, Grenzen, Log
+// Die Seite (coach.js) baut die Prompts; hier wird nur gerechnet, ob ein Aufruf erlaubt ist, und
+// der Schlüssel angehängt. Er verlässt den Hintergrund nie (Antworten enthalten nur den Text).
+
+const COACH_DEFAULTS = {
+  key: '', ghostModel: 'anthropic/claude-haiku-4.5', hintModel: 'anthropic/claude-sonnet-4.6',
+  dailyLimit: 300, nativeSuggest: false, orBase: 'https://openrouter.ai/api/v1',
+};
+const COACH_MAX_TOKENS = 400, COACH_PER_MIN = 20, COACH_LOG_MAX = 5000;
+
+async function coachCfg() { return Object.assign({}, COACH_DEFAULTS, (await get('coachCfg')) || {}); }
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+
+// Getrennte Budgets: Ghost-Text läuft automatisch und darf die Hinweise nicht aufbrauchen.
+// Minutenfenster in storage.session (übersteht das Schlafen des Service Workers).
+const COACH_BUDGET = { ghost: { perMin: 15, perDay: () => 600 }, hint: { perMin: COACH_PER_MIN, perDay: (c) => c.dailyLimit } };
+
+async function coachAllow(c, kind) {
+  const now = Date.now(), b = COACH_BUDGET[kind], rk = 'coachRate_' + kind;
+  const rate = ((await chrome.storage.session.get(rk))[rk] || []).filter((t) => now - t < 60000);
+  if (rate.length >= b.perMin) return { error: 'limit', retryInMs: 60000 - (now - rate[0]) };
+  const use = (await get('coachUse')) || {};
+  const day = use.day === today() ? use : { day: today() };
+  const n = day[kind] || 0;
+  if (n >= b.perDay(c)) {
+    const mid = new Date(); mid.setHours(24, 0, 0, 0);
+    return { error: 'limit', daily: true, retryInMs: mid - now };
+  }
+  rate.push(now);
+  await chrome.storage.session.set({ [rk]: rate });
+  await set({ coachUse: Object.assign({}, day, { [kind]: n + 1 }) });
+  return null;
+}
+
+// Nur Anfragen in der Form, die coach.js baut: begrenzt die Kosten auch für fremde Skripte der Seite
+const COACH_ROLES = new Set(['system', 'user', 'assistant']), COACH_MAX_CHARS = 30000;
+function coachShapeOk(m) {
+  if (!COACH_BUDGET[m.kind] || !Array.isArray(m.messages) || !m.messages.length || m.messages.length > 4) return false;
+  let total = 0;
+  for (const x of m.messages) {
+    if (!x || !COACH_ROLES.has(x.role) || typeof x.content !== 'string') return false;
+    total += x.content.length;
+  }
+  return total <= COACH_MAX_CHARS;
+}
+
+async function coachLlm(m) {
+  const c = await coachCfg();
+  if (!c.key) return { error: 'nokey' };
+  if (!coachShapeOk(m)) return { error: 'bad' };
+  const no = await coachAllow(c, m.kind);
+  if (no) return no;
+  const body = {
+    model: m.kind === 'ghost' ? c.ghostModel : c.hintModel,
+    messages: m.messages.map((x) => ({ role: x.role, content: x.content })),
+    max_tokens: Math.min(Number(m.max_tokens) || COACH_MAX_TOKENS, COACH_MAX_TOKENS),
+    temperature: 0.2,
+  };
+  let r;
+  try {
+    r = await fetch(c.orBase.replace(/\/+$/, '') + '/chat/completions', {
+      method: 'POST', cache: 'no-store',
+      headers: {
+        Authorization: 'Bearer ' + c.key, 'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/mick-gsk/leetcode-debugger', 'X-Title': 'LeetCode-Lerncoach',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) { return { error: 'net' }; }
+  if (!r.ok) return { error: r.status === 401 ? 'nokey' : 'http', status: r.status };
+  try {
+    const j = await r.json();
+    const text = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+    return typeof text === 'string' ? { text } : { error: 'bad' };
+  } catch (e) { return { error: 'bad' }; }
+}
+
+// Anhängen nacheinander, damit sich zwei Tabs nicht gegenseitig Zeilen überschreiben
+let logChain = Promise.resolve();
+function coachLog(rows) {
+  logChain = logChain.then(async () => {
+    const all = ((await get('coachLog')) || []).concat((rows || []).filter((x) => x && typeof x === 'object'));
+    const kept = all.slice(-COACH_LOG_MAX);
+    await set({ coachLog: kept });
+    return { n: kept.length };
+  });
+  return logChain;
+}
+
+async function coachState() {
+  const c = await coachCfg(), use = (await get('coachUse')) || {};
+  return {
+    hasKey: !!c.key, ghostModel: c.ghostModel, hintModel: c.hintModel, dailyLimit: c.dailyLimit, nativeSuggest: !!c.nativeSuggest,
+    usedToday: use.day === today() ? use.hint || 0 : 0, logCount: ((await get('coachLog')) || []).length,
+  };
+}
+
+async function coachSave(o) {
+  const c = await coachCfg(), n = Object.assign({}, c);
+  if (o.clearKey) n.key = '';
+  else if (typeof o.key === 'string' && o.key.trim()) n.key = o.key.trim();
+  for (const k of ['ghostModel', 'hintModel']) if (typeof o[k] === 'string' && o[k].trim()) n[k] = o[k].trim();
+  if (Number(o.dailyLimit) > 0) n.dailyLimit = Math.round(Number(o.dailyLimit));
+  if (typeof o.nativeSuggest === 'boolean') n.nativeSuggest = o.nativeSuggest;
+  await set({ coachCfg: n });
+  return coachState();
+}
+
+chrome.runtime.onMessage.addListener((m, sender, reply) => {
+  if (!m || m.lcdbg !== 'coach') return;
+  (async () => {
+    if (m.op === 'llm') return coachLlm(m);
+    if (m.op === 'log') return coachLog(m.rows);
+    if (m.op === 'cfg') { const c = await coachCfg(); return { hasKey: !!c.key, nativeSuggest: !!c.nativeSuggest }; }
+    return { error: 'bad' };
+  })().then(reply, () => reply({ error: 'bad' }));
   return true;
 });
 

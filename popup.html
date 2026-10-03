@@ -38,7 +38,25 @@
     <button id="start" disabled>🐞 Debugger starten</button>
     <div id="msg" class="msg">Prüfe diesen Tab …</div>
     <ul id="checks"></ul>
-    <div class="muted">Tastenkürzel auf LeetCode: Alt+Shift+D</div>
+    <div class="muted">Tastenkürzel auf LeetCode: Alt+Shift+D · Lern-Coach: Alt+Shift+H, Ghost-Text sofort: Alt+Shift+Leertaste</div>
+
+    <section id="coach">
+      <h2>Lern-Coach (OpenRouter)</h2>
+      <div id="coachMsg" class="msg">…</div>
+      <form id="coachForm">
+        <label for="orKey">Schlüssel</label><input id="orKey" type="password" autocomplete="off" placeholder="sk-or-…">
+        <label for="ghostModel">Ghost-Text</label><input id="ghostModel" autocomplete="off">
+        <label for="hintModel">Hinweise</label><input id="hintModel" autocomplete="off">
+        <label for="dailyLimit">Tageslimit</label><input id="dailyLimit" type="number" min="1" step="1">
+        <label class="full"><input id="nativeSuggest" type="checkbox"> LeetCode-Vorschläge schon vor Accepted</label>
+        <div class="full muted">An OpenRouter gehen Aufgabentext und dein Code. Kosten: ca. 0,1–1 Cent pro Hinweis.
+          Schlüssel: <a href="https://openrouter.ai/settings/keys" target="_blank">openrouter.ai/settings/keys</a>, am besten mit Ausgabenlimit.</div>
+        <div class="full row"><button type="submit" class="sec">Speichern</button>
+          <button type="button" id="clearKey" class="sec" hidden>Schlüssel löschen</button></div>
+      </form>
+      <div class="row"><span class="muted">Log: <span id="logCount">0</span> Ereignisse</span>
+        <button id="exportLog" class="sec">Log exportieren (JSON)</button></div>
+    </section>
 
     <section>
       <h2>Aktualisierung</h2>

@@ -41,6 +41,21 @@
     return true;   // Antwort kommt asynchron
   });
 
+  // ------------------------------------------------------------ Lern-Coach: Brücke zum Hintergrund
+
+  // coach.js (Hauptwelt) fragt OpenRouter/Log/Einstellungen an; der Schlüssel bleibt im Hintergrund.
+  // Jedes Skript der Seite kann hier anfragen – die Minuten-/Tageslimits im Hintergrund deckeln das.
+  const COACH_OPS = new Set(['llm', 'log', 'cfg']);
+  window.addEventListener('message', (e) => {
+    const m = e.data;
+    if (e.source !== window || !m || m.lcdbgCoach !== 'req' || !COACH_OPS.has(m.op)) return;
+    const answer = (r) => window.postMessage(Object.assign({}, r, { lcdbgCoach: 'res', id: m.id }), location.origin);
+    const msg = { lcdbg: 'coach', op: m.op, kind: m.kind, messages: m.messages, max_tokens: m.max_tokens, rows: m.rows };
+    try {
+      chrome.runtime.sendMessage(msg).then((r) => answer(r || { error: 'bad' }), () => answer({ error: 'reload' }));
+    } catch (err) { answer({ error: 'reload' }); }   // Extension neu geladen: Seite braucht F5
+  });
+
   // Seitenaufruf melden: Hintergrund prüft (gedrosselt) auf Updates
   try { chrome.runtime.sendMessage({ lcdbg: 'pageLoad' }).catch(() => {}); } catch (e) { /* Extension neu geladen */ }
 
