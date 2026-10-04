@@ -394,6 +394,40 @@ t('Ergebnisfeld: lange Eingabe, mitten im Wort umbrochen, wird wieder ein Wert',
   assert.strictEqual(T.caseSignature({ input: '"sum"\n["call","getCallCount","call"]\n[[2,2],[],[1,2]]' }), T.caseSignature(p));
 });
 
+t('Promise: reject nach resolve(promise) bleibt wirkungslos – Hinweis mit beiden Zeilen', async () => {
+  const sol = [
+    'var timeLimit = function(fn, t) {',                       // 1
+    '    return async function(...args) {',                    // 2
+    '        return new Promise((resolve, reject) => {',       // 3
+    '            resolve(fn(...args))',                         // 4
+    '            const timer = setTimeout(() => {',            // 5
+    '                reject("Time Limit Exceeded")',            // 6
+    '            }, t)',                                        // 7
+    '        })',
+    '    }',
+    '};'].join('\n');
+  const ex = { n: 1, vars: [{ name: 'fn', value: 'async (n) => { await new Promise(res => setTimeout(res, 100)); return n * n; }' },
+    { name: 'inputs', value: '[5]' }, { name: 't', value: '50' }], output: '{"rejected":"Time Limit Exceeded","time":50}' };
+  const r = await T.run(sol, T.guessHarness(sol, ex, 'promise-time-limit'));
+  assert.strictEqual(r.error, null);
+  assert.deepStrictEqual(r.result.resolved, 25);
+  assert.strictEqual(r.settle && r.settle.line, 6);
+  assert.strictEqual(r.settle.first, 4);
+  assert.match(r.settle.message, /reject\(…\) in Zeile 6 bleibt wirkungslos/);
+  assert.match(r.settle.message, /Zeile 4/);
+  assert.match(r.settle.message, /\.then\(resolve, reject\)/);
+
+  // richtige Lösung: fn ist zuerst fertig, das spätere reject ist egal – kein Hinweis
+  const good = sol.replace('resolve(fn(...args))', 'fn(...args).then(resolve, reject)');
+  const ex2 = Object.assign({}, ex, { vars: [ex.vars[0], ex.vars[1], { name: 't', value: '150' }] });
+  const r2 = await T.run(good, T.guessHarness(good, ex2, 'promise-time-limit'));
+  assert.strictEqual(r2.result.resolved, 25);
+  assert.strictEqual(r2.settle || null, null);
+  // instanceof Promise bleibt wahr für async-Ergebnisse
+  const r3 = await T.run('var f = async () => 1;', '(f() instanceof Promise) && (new Promise(() => {}) instanceof Promise);');
+  assert.strictEqual(r3.result, true);
+});
+
 t('Einsendung aus dem Netz: Namen kommen aus der Funktion', async () => {
   const ex = T.submissionCase({ input: '"aab"\n"baa"', expected: 'true', got: 'false', status: 'Wrong Answer' }, RANSOM);
   assert.deepStrictEqual(ex.vars, [{ name: 'ransomNote', value: '"aab"' }, { name: 'magazine', value: '"baa"' }]);

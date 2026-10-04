@@ -118,6 +118,39 @@ const CHECK = {
   input: '"aab"\n"baa"', status_msg: 'Wrong Answer', state: 'SUCCESS',
 };
 
+// Promise Time Limit mit dem Fehler aus dem echten Versuch: resolve(fn(...args)) bindet das Promise,
+// das reject aus dem Zeitlimit bleibt wirkungslos
+const PTL = `/**
+ * @param {Function} fn
+ * @param {number} t
+ * @return {Function}
+ */
+var timeLimit = function(fn, t) {
+
+    return async function(...args) {
+        return new Promise((resolve, reject) => {
+            resolve(fn(...args))
+
+            const timer = setTimeout(() => {
+                reject("Time Limit Exceeded")
+            }, t)
+        })
+    }
+};`;
+const PTL_DESC = `
+    <p>Given an asynchronous function fn and a time t in milliseconds, return a new time limited version of the input function.</p>
+    <p><strong>Example 1:</strong></p>
+    <pre><strong>Input:</strong> 
+fn = async (n) =&gt; { 
+  await new Promise(res =&gt; setTimeout(res, 100)); 
+  return n * n; 
+}
+inputs = [5]
+t = 50
+<strong>Output:</strong> {"rejected":"Time Limit Exceeded","time":50}
+<strong>Explanation:</strong> The provided function is set to resolve after 100ms.</pre>
+    <p><strong>Constraints:</strong></p>`;
+
 const makePage = (title, desc, code) => `<!doctype html><html class="dark"><head><title>${title} - LeetCode</title></head>
 <body style="background:#1a1a1a;color:#eee;font-family:sans-serif;margin:0">
 <div style="display:flex;height:100vh">
@@ -259,6 +292,7 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     if (/\/submissions\/detail\/\d+\/check\//.test(u)) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(CHECK) });
     if (/\/problems\/[^/]+\/submit\//.test(u)) { submits.push(route.request().postData()); return route.fulfill({ contentType: 'application/json', body: '{"submission_id":987654321}' }); }
     if (/\/problems\/to-be-or-not-to-be\//.test(u)) return route.fulfill({ contentType: 'text/html; charset=utf-8', body: makePage('To Be Or Not To Be', TOBE_DESC, TOBE) });
+    if (/\/graphql\//.test(u) && /promise-time-limit/.test(route.request().postData() || '')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { question: { content: PTL_DESC } } }) });
     if (/\/problems\/ransom-note\//.test(u)) return route.fulfill({ contentType: 'text/html; charset=utf-8', body: makePage('Ransom Note', RANSOM_DESC, RANSOM) });
     return route.fulfill({ contentType: 'text/html; charset=utf-8', body: PAGE });
   });
@@ -570,6 +604,23 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     assert.deepStrictEqual(zone.map((z) => z[0]), [15], 'Fehlerkasten an der Stelle des Wurfs');
   });
 
+  await step('Aufgabe wechseln ohne Neuladen: Beispiele der neuen Aufgabe, nicht der alten (Promise Time Limit)', async () => {
+    // wie LeetCode: Adresse und Code wechseln sofort, der Aufgabentext erst etwas später
+    await page.evaluate((code) => { history.pushState({}, '', '/problems/promise-time-limit/'); window.__setCode(code); }, PTL);
+    await page.waitForTimeout(800);
+    await page.evaluate((html) => { document.querySelector('[data-track-load="description_content"]').innerHTML = html; }, PTL_DESC);
+    await page.locator('.pill').click();
+    await waitText('.r2', /Falsches Ergebnis\s*Zeile 13/);
+    const card = await text('.card');
+    assert.match(card, /Time Limit Exceeded/, 'erwartet stammt aus der neuen Aufgabe');
+    assert.doesNotMatch(card, /toBe|Not Equal/, 'nichts aus der alten Aufgabe');
+    assert.match(card, /resolved/);
+    assert.match(card, /reject\(…\) in Zeile 13 bleibt wirkungslos: Zeile 10 hat das Promise/);
+    assert.match(card, /fn\(\.\.\.args\)\.then\(resolve, reject\)/);
+    if (SHOT) await page.screenshot({ path: SHOT.replace(/\.png$/, '-promise.png') });
+    await page.locator('[data-act="close"]').click();
+  });
+
   // ---------------------------------------------------------------- Gescheiterte Einsendung
 
   await step('Einsendung scheitert: Fall wird mitgehört, Knopf meldet ihn', async () => {
@@ -716,7 +767,7 @@ const PAGE = makePage('Function Composition', COMPOSE_DESC, SOLUTION);
     const p = await popup();
     await p.locator('#check').click();
     await p.waitForFunction(() => /Update auf v9\.0\.0 geladen/.test(document.querySelector('#upd').innerText), null, { timeout: 8000 });
-    assert.match(await p.locator('#checks').innerText(), /Debugger 2.5.1 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
+    assert.match(await p.locator('#checks').innerText(), /Debugger 2.6.0 geladen[\s\S]*Seite neu laden, um v9\.0\.0 zu nutzen/);
     if (SHOT) { await p.setViewportSize({ width: 340, height: 420 }); await p.screenshot({ path: SHOT.replace(/\.png$/, '-update.png') }); }
     assert.match(await p.locator('#v').innerText(), /v9\.0\.0/);
     assert.ok(gh.auth.includes('Bearer geheim'), 'Token geht als Authorization mit');

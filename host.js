@@ -154,12 +154,19 @@
     });
   }
 
+  // LeetCode wechselt Aufgaben ohne Neuladen; der Aufgabentext im DOM kommt erst danach. Steht dort
+  // nach einem Wechsel noch derselbe Text wie bei der vorigen Aufgabe, ist er alt: dann per API holen.
+  let domSeen = null, elSeen = null;
+  const descEl = () => document.querySelector('[data-track-load="description_content"]');
   async function sendInit() {
-    const s = slug();
+    const s = slug(), changed = s !== lastSlug;
     lastSlug = s;
+    const dom = descriptionFromDom(), stale = changed && dom && dom === domSeen;
+    domSeen = dom;
+    elSeen = descEl() ? descEl().innerText : null;
     const [code, examplesText] = await Promise.all([
       askPage('getCode'),
-      Promise.resolve(descriptionFromDom()).then((t) => t || descriptionFromApi()),
+      dom && !stale ? dom : descriptionFromApi(),
     ]);
     toEngine({
       type: 'init', slug: s, examplesText, code: code.code || '', lang: code.lang || null,
@@ -244,9 +251,16 @@
     window.postMessage(Object.assign({ lcdbgHost: 'res', id: m.id }, res), location.origin);
   }
 
+  let ticks = 0;
   setInterval(() => {
     if (engine && !engine.isConnected) { engineReady = false; de.appendChild(engine); }
     if (slug() && engineReady && slug() !== lastSlug) sendInit();
+    // Aufgabentext hat sich geändert (neue Aufgabe fertig gerendert): neu schicken – die Engine liest
+    // die Beispiele nur neu ein, wenn sie anders sind
+    else if (engineReady && ++ticks % 4 === 0) {
+      const el = descEl();
+      if (el && elSeen != null && el.innerText !== elSeen && /(Input|输入)\s*[:：]/.test(el.innerText)) sendInit();
+    }
   }, 250);
   setTimeout(hint, 1500);
 

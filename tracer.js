@@ -504,9 +504,48 @@
     };
     const myClear = (id) => { clearTimeout(id); clearInterval(id); timers.delete(id); };
 
+    // Promise wie das echte, aber es merkt sich, wer es festlegt. Typischer stiller Fehler:
+    // resolve(einPromise) bindet es an dieses – ein späteres reject (z. B. Zeitlimit) wird ignoriert.
+    // Gemeldet wird nur, wenn der ignorierte Aufruf etwas geändert hätte (gebundenes Promise noch offen).
+    const NP = Promise;
+    const callLine = () => {
+      const m = (new Error().stack || '').match(/<anonymous>:(\d+):\d+/);
+      return m ? +m[1] : lastLine;
+    };
+    function TPromise(executor) {
+      if (!new.target || typeof executor !== 'function') return new NP(executor);
+      let first = null, bound = null;
+      return new NP((ok, no) => {
+        const wrap = (kind, real) => (v) => {
+          const line = callLine();
+          if (!first) {
+            first = { kind, line };
+            let then = null;
+            try { then = kind === 'resolve' && v && (typeof v === 'object' || typeof v === 'function') ? v.then : null; } catch (e) { /* egal */ }
+            if (typeof then === 'function') {
+              bound = { open: true };
+              NP.resolve(v).then(() => { bound.open = false; }, () => { bound.open = false; });
+            }
+          } else if (bound && bound.open && !res.settle && line && line < firstHarnessLine && first.line < firstHarnessLine) {
+            const expr = (/resolve\(\s*(.+?)\s*\)\s*;?\s*$/.exec(src.split('\n')[first.line - 1] || '') || [])[1];
+            res.settle = {
+              line, first: first.line,
+              message: `${kind}(…) in Zeile ${line} bleibt wirkungslos: Zeile ${first.line} hat das Promise mit resolve(…) schon an ein anderes ` +
+                `Promise gebunden. Ab da zählt nur dessen Ergebnis, auch wenn es länger dauert. ` +
+                `Leite es stattdessen weiter: ${expr || 'promise'}.then(resolve, reject).`,
+            };
+          }
+          real(v);
+        };
+        return executor(wrap('resolve', ok), wrap('reject', no));
+      });
+    }
+    TPromise.prototype = NP.prototype;   // instanceof Promise bleibt wahr, auch für async-Ergebnisse
+    for (const k of ['resolve', 'reject', 'all', 'allSettled', 'any', 'race', 'withResolvers']) if (NP[k]) TPromise[k] = NP[k].bind(NP);
+
     let fn;
     try {
-      fn = (0, eval)('(async function(console,setTimeout,clearTimeout,setInterval,clearInterval,__s,__t,__e,__x,__r,__done,__k){' +
+      fn = (0, eval)('(async function(console,setTimeout,clearTimeout,setInterval,clearInterval,Promise,__s,__t,__e,__x,__r,__done,__k){' +
         inst.code + helperSource(src) + '\n})');
     } catch (e) {
       res.error = { kind: 'internal', name: e.name, message: 'Interner Fehler beim Vorbereiten: ' + e.message, line: null };
@@ -518,7 +557,7 @@
     const race = (p) => Promise.race([p, sleep(remaining()).then(() => TIMEOUT)]);
 
     try {
-      const r = await race(fn(fakeConsole, mySetTimeout, myClear, mySetInterval, myClear,
+      const r = await race(fn(fakeConsole, mySetTimeout, myClear, mySetInterval, myClear, TPromise,
         hooks.__s, hooks.__t, hooks.__e, hooks.__x, hooks.__r, hooks.__done, hooks.__k));
       if (r === TIMEOUT) res.timedOut = true;
       if (!res.timedOut && res.hasResult && res.result && typeof res.result.then === 'function') {

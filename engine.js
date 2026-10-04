@@ -50,8 +50,16 @@
     if (m.code) S.code = m.code;
     S.lang = m.lang || S.lang;
     if (m.subs) S.subs = m.subs;
+    // Gleiche Aufgabe, aber andere Beispiele: der erste Aufgabentext war noch der alte (LeetCode
+    // wechselt Aufgaben ohne Neuladen) – dann neu einlesen, sonst bleibt alles, wie es ist
+    const examples = T.parseExamples(m.examplesText || '');
+    if (sameProblem && examples.length && JSON.stringify(examples) !== JSON.stringify(S.examples)) {
+      S.examples = examples;
+      S.sel = '0'; S.status = {}; S.run = null; S.message = null; S.summary = null;
+      if (S.open) setTimeout(checkAll, 0);
+    }
     if (!sameProblem) {
-      S.examples = T.parseExamples(m.examplesText || '');
+      S.examples = examples;
       S.harness = (m.draft && m.draft.harness) || {};
       S.sel = S.examples.length ? '0' : CUSTOM;
       S.status = {};
@@ -317,10 +325,13 @@
         rows: [['erwartet', exp]], hint: T.hint(e, S.code), notes: notes(),
       };
     }
+    // Im Lauf beobachtet: ein resolve/reject, das ignoriert wurde, obwohl es das Ergebnis geändert hätte
+    const settle = run.settle;
     if (c === false) return {
-      cls: 'bad', title: `❌ ${label}: falsches Ergebnis`, head: 'Falsches Ergebnis', rows: [['erwartet', exp], ['bekommen', run.resultText]], notes: notes(),
+      cls: 'bad', title: `❌ ${label}: falsches Ergebnis`, head: 'Falsches Ergebnis', at: settle ? at(settle.line) : null,
+      rows: [['erwartet', exp], ['bekommen', run.resultText]], notes: notes(),
       lead: lcNote ? `Diesen Fall hat LeetCode bei der Einsendung gemeldet (${lcNote.status || 'Fehlschlag'}).` : null,
-      hint: 'Geh vom Ende mit ↶ rückwärts: Der erste Wert, der nicht deiner Erwartung entspricht, zeigt auf den Fehler.',
+      hint: settle ? settle.message : 'Geh vom Ende mit ↶ rückwärts: Der erste Wert, der nicht deiner Erwartung entspricht, zeigt auf den Fehler.',
     };
     return { cls: '', title: label, rows: [['Ergebnis', run.resultText]].concat(exp ? [['laut Aufgabe', exp]] : []) };
   }
