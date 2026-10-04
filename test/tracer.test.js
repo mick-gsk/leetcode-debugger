@@ -383,6 +383,17 @@ t('Ergebnisfeld einer gescheiterten Einsendung wird gelesen', () => {
   assert.strictEqual(tle.expected, null);
 });
 
+t('Ergebnisfeld: lange Eingabe, mitten im Wort umbrochen, wird wieder ein Wert', async () => {
+  // LeetCode bricht lange Listen im Ergebnisfeld um, auch mitten in einem String („getC“ | „allCount“)
+  const panel = ['Wrong Answer', '17 / 20 testcases passed', 'Input', 'fnName =', '"sum"', 'actions =', '["call","getC', 'allCount","call"]',
+    'values =', '[[2,2],[],', '[1,2]]', 'Output', '[4,0,3]', 'Expected', '[4,1,3]'].join('\n');
+  const p = T.parseResultPanel(panel);
+  assert.deepStrictEqual(p.vars, [
+    { name: 'fnName', value: '"sum"' }, { name: 'actions', value: '["call","getCallCount","call"]' }, { name: 'values', value: '[[2,2],[],[1,2]]' }]);
+  // dieselbe Einsendung aus dem Netz (ohne Umbruch) gilt als derselbe Fall
+  assert.strictEqual(T.caseSignature({ input: '"sum"\n["call","getCallCount","call"]\n[[2,2],[],[1,2]]' }), T.caseSignature(p));
+});
+
 t('Einsendung aus dem Netz: Namen kommen aus der Funktion', async () => {
   const ex = T.submissionCase({ input: '"aab"\n"baa"', expected: 'true', got: 'false', status: 'Wrong Answer' }, RANSOM);
   assert.deepStrictEqual(ex.vars, [{ name: 'ransomNote', value: '"aab"' }, { name: 'magazine', value: '"baa"' }]);

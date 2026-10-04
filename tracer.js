@@ -868,13 +868,24 @@
       else if (vars.length) vars[vars.length - 1].value += (vars[vars.length - 1].value ? '\n' : '') + l;
     }
     if (!vars.length) return null;
+    for (const v of vars) v.value = unwrap(v.value);
     const join = (k) => (sec[k] && sec[k].length ? sec[k].join('\n') : null);
     return { status: lines[at], vars: vars.map((v) => ({ name: v.name, value: v.value.trim() })), expected: join('expected'), got: join('output') };
   }
 
+  // Lange Werte bricht LeetCode im Ergebnisfeld um, auch mitten in einem String ("getC" | "allCount").
+  // In einen Wert gehört kein Zeilenumbruch: ohne Trenner zusammensetzen – nur wenn das nicht
+  // lesbar ist, der Rest aber schon, war der Umbruch ein echter Trenner.
+  function unwrap(value) {
+    const v = String(value);
+    if (!v.includes('\n')) return v;
+    const glued = v.replace(/\n/g, '');
+    return parseValue(glued).ok || !parseValue(v).ok ? glued : v;
+  }
+
   // Rohdaten (aus Netz oder Ergebnisfeld) → Testfall im Format von parseExamples
   function submissionCase(sub, solution) {
-    let vars = sub.vars && sub.vars.length ? sub.vars.map((v) => ({ name: v.name, value: v.value })) : null;
+    let vars = sub.vars && sub.vars.length ? sub.vars.map((v) => ({ name: v.name, value: unwrap(v.value) })) : null;
     if (!vars) {
       const lines = String(sub.input || '').split('\n').filter((l) => l.trim() !== '');
       const main = findMain(solution || '');
@@ -890,9 +901,10 @@
     };
   }
 
-  // Gleiche Eingabe = gleicher Fall (egal ob aus Netz oder Ergebnisfeld)
-  const caseSignature = (sub) => (sub.vars && sub.vars.length ? sub.vars.map((v) => v.value) : String(sub.input || '').split('\n'))
-    .map((l) => l.trim()).filter(Boolean).join('\n');
+  // Gleiche Eingabe = gleicher Fall (egal ob aus Netz oder Ergebnisfeld). Leerraum und Umbrüche
+  // zählen nicht: das Ergebnisfeld bricht lange Werte um, die Netz-Antwort nicht.
+  const caseSignature = (sub) => (sub.vars && sub.vars.length ? sub.vars.map((v) => v.value).join('') : String(sub.input || ''))
+    .replace(/\s+/g, '');
 
   // ---------------------------------------------------------------- Fehler-Hinweise
 

@@ -95,8 +95,9 @@
 
   // ------------------------------------------------------------ Gescheiterte Einsendungen
 
-  const signature = (sub) => (sub.vars && sub.vars.length ? sub.vars.map((v) => v.value).join('\n') : String(sub.input || ''))
-    .split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
+  // Leerraum zählt nicht: das Ergebnisfeld bricht lange Werte um, die Netz-Antwort nicht
+  const signature = (sub) => (sub.vars && sub.vars.length ? sub.vars.map((v) => v.value).join('') : String(sub.input || ''))
+    .replace(/\s+/g, '');
   const subs = () => store.get('subs:' + slug(), []);
 
   // Das Ergebnisfeld nach „Submit“ (Wrong Answer / Runtime Error / Time Limit Exceeded …) als Text

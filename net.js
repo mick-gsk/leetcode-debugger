@@ -12,7 +12,7 @@
   const slugNow = () => (location.pathname.match(/^\/problems\/([^/]+)/) || [])[1] || '';
   const lastCode = {};   // zuletzt eingesendeter Code pro Aufgabe (aus der Submit-Anfrage)
 
-  const signature = (input) => String(input || '').split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
+  const signature = (input) => String(input || '').replace(/\s+/g, '');   // Umbrüche im Ergebnisfeld zählen nicht
 
   function remember(slug, sub) {
     if (!slug || !signature(sub.input)) return;
